@@ -8,21 +8,15 @@ import (
 	"strings"
 )
 
-const itemPrefix = "bw-aws:"
-
-// handleLogin handles the login command
-func handleLogin() {
-	bw := NewBitwardenClient()
-	if err := bw.Login(); err != nil {
-		fmt.Printf("Error logging in: %v\n", err)
-		os.Exit(1)
-	}
-	fmt.Println("Successfully authenticated with Bitwarden")
-}
-
 // handleAdd handles adding a new AWS profile
 func handleAdd(profile string) {
-	bw := NewBitwardenClient()
+	gp, err := NewGopassClient()
+	if err != nil {
+		fmt.Printf("Error: %v\n", err)
+		os.Exit(1)
+	}
+	defer gp.Close()
+
 	reader := bufio.NewReader(os.Stdin)
 
 	fmt.Printf("Adding AWS profile: %s\n\n", profile)
@@ -34,12 +28,12 @@ func handleAdd(profile string) {
 
 	// Get AWS Secret Access Key (hidden input)
 	fmt.Print("AWS Secret Access Key: ")
-	
+
 	// Disable echo
 	exec.Command("stty", "-echo").Run()
 	secretKey, _ := reader.ReadString('\n')
 	exec.Command("stty", "echo").Run()
-	
+
 	secretKey = strings.TrimSpace(secretKey)
 	fmt.Println()
 
@@ -53,68 +47,56 @@ func handleAdd(profile string) {
 	mfaSerial, _ := reader.ReadString('\n')
 	mfaSerial = strings.TrimSpace(mfaSerial)
 
-	// Create fields map
-	fields := map[string]string{
-		"aws_access_key_id":     accessKey,
-		"aws_secret_access_key": secretKey,
-	}
-
-	if region != "" {
-		fields["region"] = region
-	}
-
-	if mfaSerial != "" {
-		fields["mfa_serial"] = mfaSerial
-	}
-
-	// Create secure note in Bitwarden
-	itemName := itemPrefix + profile
-	notes := fmt.Sprintf("AWS credentials for profile: %s\nManaged by bw-aws", profile)
-
-	if err := bw.CreateSecureNote(itemName, fields, notes); err != nil {
-		fmt.Printf("Error creating item in Bitwarden: %v\n", err)
+	// Create credentials in gopass
+	if err := gp.CreateCredentials(profile, accessKey, secretKey, region, mfaSerial); err != nil {
+		fmt.Printf("Error creating profile in gopass: %v\n", err)
 		os.Exit(1)
 	}
 
-	fmt.Printf("\n✓ Successfully added profile '%s' to Bitwarden\n", profile)
+	fmt.Printf("\n✓ Successfully added profile '%s' to gopass\n", profile)
 }
 
 // handleList handles listing AWS profiles
 func handleList() {
-	bw := NewBitwardenClient()
-	items, err := bw.ListItems(itemPrefix)
+	gp, err := NewGopassClient()
+	if err != nil {
+		fmt.Printf("Error: %v\n", err)
+		os.Exit(1)
+	}
+	defer gp.Close()
+
+	profiles, err := gp.ListProfiles()
 	if err != nil {
 		fmt.Printf("Error listing profiles: %v\n", err)
 		os.Exit(1)
 	}
 
-	if len(items) == 0 {
+	if len(profiles) == 0 {
 		fmt.Println("No AWS profiles found. Add one with: bw-aws add <profile-name>")
 		return
 	}
 
 	fmt.Println("Available AWS profiles:")
-	for _, item := range items {
-		if strings.HasPrefix(item.Name, itemPrefix) {
-			profile := strings.TrimPrefix(item.Name, itemPrefix)
-			region := GetFieldValue(&item, "region")
-			mfaSerial := GetFieldValue(&item, "mfa_serial")
-
-			fmt.Printf("  • %s", profile)
-			if region != "" {
-				fmt.Printf(" (region: %s)", region)
-			}
-			if mfaSerial != "" {
-				fmt.Printf(" [MFA enabled]")
-			}
-			fmt.Println()
+	for _, profile := range profiles {
+		fmt.Printf("  • %s", profile.Name)
+		if profile.Region != "" {
+			fmt.Printf(" (region: %s)", profile.Region)
 		}
+		if profile.MFASerial != "" {
+			fmt.Printf(" [MFA enabled]")
+		}
+		fmt.Println()
 	}
 }
 
 // handleExec handles executing a command with AWS credentials
 func handleExec(profile string, args []string) {
-	bw := NewBitwardenClient()
+	gp, err := NewGopassClient()
+	if err != nil {
+		fmt.Printf("Error: %v\n", err)
+		os.Exit(1)
+	}
+	defer gp.Close()
 
 	// Skip "--" if present
 	if len(args) > 0 && args[0] == "--" {
@@ -126,25 +108,11 @@ func handleExec(profile string, args []string) {
 		os.Exit(1)
 	}
 
-	// Get credentials from Bitwarden
-	itemName := itemPrefix + profile
-	item, err := bw.GetItem(itemName)
+	// Get credentials from gopass
+	creds, err := gp.GetCredentials(profile)
 	if err != nil {
 		fmt.Printf("Error getting profile '%s': %v\n", profile, err)
 		fmt.Println("Run 'bw-aws list' to see available profiles")
-		os.Exit(1)
-	}
-
-	// Extract credentials
-	creds := &AWSCredentials{
-		AccessKeyID:     GetFieldValue(item, "aws_access_key_id"),
-		SecretAccessKey: GetFieldValue(item, "aws_secret_access_key"),
-		Region:          GetFieldValue(item, "region"),
-		MFASerial:       GetFieldValue(item, "mfa_serial"),
-	}
-
-	if creds.AccessKeyID == "" || creds.SecretAccessKey == "" {
-		fmt.Println("Invalid credentials in Bitwarden item")
 		os.Exit(1)
 	}
 
@@ -200,13 +168,12 @@ func handleExec(profile string, args []string) {
 
 // handleRemove handles removing an AWS profile
 func handleRemove(profile string) {
-	bw := NewBitwardenClient()
-	itemName := itemPrefix + profile
-	item, err := bw.GetItem(itemName)
+	gp, err := NewGopassClient()
 	if err != nil {
-		fmt.Printf("Error: profile '%s' not found\n", profile)
+		fmt.Printf("Error: %v\n", err)
 		os.Exit(1)
 	}
+	defer gp.Close()
 
 	// Confirm deletion
 	fmt.Printf("Are you sure you want to remove profile '%s'? (yes/no): ", profile)
@@ -219,7 +186,7 @@ func handleRemove(profile string) {
 		return
 	}
 
-	if err := bw.DeleteItem(item.ID); err != nil {
+	if err := gp.RemoveProfile(profile); err != nil {
 		fmt.Printf("Error removing profile: %v\n", err)
 		os.Exit(1)
 	}

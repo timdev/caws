@@ -30,8 +30,6 @@ func main() {
 			os.Exit(1)
 		}
 		handleExec(os.Args[2], os.Args[3:])
-	case "login":
-		handleLogin()
 	case "remove", "rm":
 		if len(os.Args) < 3 {
 			fmt.Println("Usage: bw-aws remove <profile-name>")
@@ -50,14 +48,13 @@ func main() {
 }
 
 func printUsage() {
-	fmt.Println(`bw-aws - AWS credential manager using Bitwarden
+	fmt.Println(`bw-aws - AWS credential manager using gopass
 
 Usage:
-  bw-aws login                           Authenticate with Bitwarden
   bw-aws add <profile>                   Add AWS credentials for a profile
   bw-aws list                            List available AWS profiles
   bw-aws exec <profile> -- <command>     Execute command with AWS credentials
-  bw-aws remove <profile>                Remove a profile from Bitwarden
+  bw-aws remove <profile>                Remove a profile from gopass
   bw-aws version                         Show version
 
 Examples:
@@ -65,6 +62,10 @@ Examples:
   bw-aws exec production -- aws s3 ls
   bw-aws exec dev -- env | grep AWS
 
-Credentials are stored in Bitwarden as Secure Notes with the name:
-  "bw-aws:<profile-name>"`)
+Credentials are stored in gopass with the path:
+  "aws/<profile-name>"
+
+Prerequisites:
+  - gopass must be installed and initialized (run 'gopass init' first)
+  - GPG must be configured`)
 }
