@@ -4,32 +4,32 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-`bw-aws` is a CLI tool that manages AWS credentials using gopass as the storage backend. It's a fast, local-first alternative to aws-vault that leverages gopass's GPG-encrypted password store.
+`caws` (Credential AWS) is a CLI tool that manages AWS credentials using password-based encryption. It's a fast, local-first alternative to aws-vault with zero external dependencies.
 
 **Core workflow:**
-1. Long-term AWS credentials stored encrypted in gopass (at `~/.local/share/gopass/stores/root/aws/<profile>`)
-2. Tool fetches credentials using gopass Go library (direct API calls, no CLI)
+1. Long-term AWS credentials stored encrypted in `~/.caws/vault.enc` (Argon2id + AES-256-GCM)
+2. Tool prompts for vault password and decrypts credentials
 3. Exchanges long-term credentials for temporary STS credentials (1-hour duration)
-4. Caches temporary credentials in `~/.bw-aws/cache/<profile>.json`
+4. Caches temporary credentials in `~/.caws/cache/<profile>.json`
 5. Executes commands with credentials injected as environment variables
 
 ## Build & Development Commands
 
 ```bash
 # Build the binary
-go build -o bw-aws
+go build -o caws
 
 # Run without installing
-./bw-aws <command>
+./caws <command>
 
 # Install to system
-sudo mv bw-aws /usr/local/bin/
+sudo mv caws /usr/local/bin/
 
 # Install for local user
-mv bw-aws ~/.local/bin/  # Ensure ~/.local/bin is in PATH
+mv caws ~/.local/bin/  # Ensure ~/.local/bin is in PATH
 ```
 
-**Testing:** See `TEST.md` for manual testing instructions with isolated gopass store.
+**Testing:** See `TEST.md` for manual testing instructions.
 
 **No unit tests** currently exist in the repository.
 
@@ -39,43 +39,67 @@ mv bw-aws ~/.local/bin/  # Ensure ~/.local/bin is in PATH
 
 - `main.go` - Entry point, command routing and usage text
 - `commands.go` - Command handlers (add, list, exec, remove)
-- `gopass.go` - gopass library integration (CRUD operations on secrets)
+- `vault.go` - Vault client (CRUD operations on encrypted credentials)
+- `crypto.go` - Encryption/decryption primitives (Argon2id + AES-256-GCM)
 - `aws.go` - AWS STS integration, credential caching, environment variable management
-- `bitwarden.go` - **DEPRECATED** - Old Bitwarden backend (kept for reference, not used)
 
 ### Key Components
 
-**GopassClient** (`gopass.go`)
-- Uses `github.com/gopasspw/gopass/pkg/gopass/api` directly (no shell exec)
-- Credentials stored with path prefix `aws/`
-- Secret format: AKV (Key-Value) with fields: `access_key`, `secret_key`, `region`, `mfa_serial`
-- GPG handled automatically by gopass library
-- Must call `Close()` to ensure pending git operations complete
+**VaultClient** (`vault.go`)
+- Manages encrypted credential vault at `~/.caws/vault.enc`
+- Prompts for password via `golang.org/x/term.ReadPassword()`
+- Methods: `GetCredentials()`, `CreateCredentials()`, `ListProfiles()`, `RemoveProfile()`
+- Each operation: prompt password → decrypt → operate → re-encrypt (if modified) → write
+- Must call `Close()` for interface compatibility (no-op in current implementation)
+
+**Encryption** (`crypto.go`)
+- **Password derivation**: Argon2id (memory-hard, GPU-resistant)
+  - Time: 1 iteration
+  - Memory: 64 MB
+  - Threads: 4
+  - Output: 32 bytes (AES-256 key)
+- **Encryption**: AES-256-GCM (authenticated encryption)
+- **Vault format**: JSON with version, salt, nonce, encrypted data
+- Functions: `encryptVault()`, `decryptVault()`, `deriveKey()`
 
 **Credential Flow** (`commands.go:handleExec()`)
-1. Create GopassClient (opens gopass store)
-2. Retrieve profile credentials via `GetCredentials(profile)`
+1. Create VaultClient (prompts for password, verifies by decrypting)
+2. Retrieve profile credentials via `GetCredentials(profile)` (decrypts vault)
 3. Check cache for valid temporary credentials (`GetCachedCredentials()`)
 4. If cache miss/expired: call AWS STS via `aws` CLI (`AssumeRole()`)
 5. Prompt for MFA code if `mfa_serial` field present
 6. Cache temporary credentials with 5-minute expiration buffer
 7. Execute command with credentials in environment
-8. Close GopassClient (flushes pending operations)
+8. Close VaultClient (no-op)
 
-**Credential Storage Schema**
+**Vault Storage Schema**
 ```
-gopass secret path: aws/<profile-name>
-Format: AKV (Key-Value)
-Password line: "AWS credentials for <profile>"
-Fields:
-  - access_key (required): AWS_ACCESS_KEY_ID
-  - secret_key (required): AWS_SECRET_ACCESS_KEY
-  - region (optional): Default AWS region
-  - mfa_serial (optional): ARN for MFA device
+Location: ~/.caws/vault.enc
+Permissions: 0600 (owner read/write only)
+
+Encrypted format:
+{
+  "version": 1,
+  "salt": "base64-encoded-32-bytes",
+  "nonce": "base64-encoded-12-bytes",
+  "data": "base64-encoded-aes-gcm-ciphertext"
+}
+
+Decrypted data structure:
+{
+  "profiles": {
+    "<profile-name>": {
+      "access_key": "AKIA...",
+      "secret_key": "...",
+      "region": "us-east-1",       // optional
+      "mfa_serial": "arn:aws:..."  // optional
+    }
+  }
+}
 ```
 
 **Caching** (`aws.go`)
-- Cache location: `~/.bw-aws/cache/<profile>.json`
+- Cache location: `~/.caws/cache/<profile>.json`
 - Cache directory permissions: 0700 (owner only)
 - Cache file permissions: 0600 (owner read/write only)
 - Expiration buffer: 5 minutes before actual expiration
@@ -84,18 +108,16 @@ Fields:
 ### External Dependencies
 
 **Runtime requirements:**
-- `gopass` - Must be initialized (`gopass init`)
-- `gpg` (GnuPG 2.x) - For gopass encryption/decryption
 - `aws` (AWS CLI) - Used for STS operations
 
 **Go dependencies:**
-- `github.com/gopasspw/gopass/pkg/gopass/api` - gopass store operations
-- `github.com/gopasspw/gopass/pkg/gopass/secrets` - Secret creation/manipulation
+- `golang.org/x/crypto` - Argon2id key derivation
+- `golang.org/x/term` - Secure password input (ReadPassword)
+- `golang.org/x/sys` - System calls (used by term)
 
 **Key commands executed:**
 - `aws sts get-session-token` - Get temporary credentials
-- No gopass CLI calls (uses library directly)
-- No GPG CLI calls (handled by gopass library)
+- No other external commands
 
 ## Common Development Patterns
 
@@ -104,24 +126,24 @@ Fields:
 1. Add case to switch in `main.go:main()`
 2. Implement handler function in `commands.go` (prefix: `handle*`)
 3. Update `printUsage()` in `main.go`
-4. Remember to call `defer gp.Close()` on GopassClient instances
+4. Remember to call `defer client.Close()` on VaultClient instances
 
-### gopass Operations
+### Vault Operations
 
-Always create client with `NewGopassClient()` and defer `Close()`:
+Always create client with `NewVaultClient()` and defer `Close()`:
 
 ```go
-gp, err := NewGopassClient()
+client, err := NewVaultClient()
 if err != nil {
     // Handle error
 }
-defer gp.Close()  // CRITICAL - ensures git operations complete
+defer client.Close()  // No-op currently, but kept for interface compatibility
 ```
 
-The gopass library handles GPG automatically:
-- User will see pinentry prompts for GPG passphrase
-- gpg-agent caches passphrase for subsequent operations
-- No manual GPG configuration needed
+Password prompting happens in `NewVaultClient()`:
+- Uses `term.ReadPassword()` for hidden input
+- Verifies password by attempting to decrypt vault
+- Returns error if password is wrong or vault is corrupted
 
 ### Error Handling
 
@@ -132,54 +154,82 @@ The codebase uses a consistent pattern:
 
 ### Input Handling
 
-For password/secret input (see `commands.go:handleAdd()`):
+For password input (see `vault.go:NewVaultClient()`):
+```go
+fmt.Print("Enter vault password: ")
+passwordBytes, err := term.ReadPassword(int(syscall.Stdin))
+fmt.Println() // New line after password
+password := string(passwordBytes)
+```
+
+For secret input (see `commands.go:handleAdd()`):
 ```go
 exec.Command("stty", "-echo").Run()  // Disable echo
 // Read input
 exec.Command("stty", "echo").Run()   // Re-enable echo
 ```
 
-**Note:** This is Unix-specific and won't work on Windows.
+**Note:** `stty` approach is Unix-specific and won't work on Windows.
 
 ## Performance Characteristics
 
-**gopass library approach** (current):
-- GetCredentials: ~10-50ms (direct GPG decrypt)
+**Current implementation:**
+- Vault decrypt: ~10-50ms (Argon2id + AES-256-GCM)
 - Cold start (with STS): ~1.4s (mostly AWS STS call)
-- Warm start (cached STS): ~0.8s (mostly AWS CLI overhead)
-- bw-aws overhead: ~50-100ms
+- Warm start (cached STS): ~0.1s (no vault access needed)
+- caws overhead: ~50ms
 
 **Why so fast:**
-- No CLI overhead (direct library calls)
-- No network calls for credential retrieval (local GPG decrypt)
-- Minimal parsing (native Go structs)
+- Pure Go encryption (no external processes)
+- No network calls for credential retrieval
+- Minimal overhead (direct memory operations)
 
-Compare to alternatives:
-- Bitwarden CLI: ~2.8s per operation (network + CLI overhead)
-- aws-vault: ~2-3s (various backends, CLI overhead)
+**Password entry frequency:**
+- Approximately once per hour per active profile
+- Vault decrypted on-demand (not cached in memory)
+- STS credentials cached for ~55 minutes
 
 ## Security Considerations
 
-- Long-term credentials stored GPG-encrypted via gopass
+- Long-term credentials encrypted with Argon2id + AES-256-GCM
+- Vault file permissions: 0600 (owner read/write only)
+- Password never cached in memory (re-prompted for each vault access)
 - Temporary credentials cached with restrictive permissions (0600)
-- GPG passphrase required for decrypt (managed by gpg-agent)
 - MFA codes read from stdin, not passed as command arguments
 - Cache expiration uses 5-minute safety buffer
 - No credentials written to shell history or logs
+- No plaintext long-term credentials ever touch disk
 
 ## Important Behaviors
 
-- Secrets are stored with `aws/` prefix in gopass (e.g., `aws/production`)
+- Vault must be initialized before use (`caws init`)
 - The tool does NOT create or manage AWS IAM users/keys
 - Temporary credentials are always 1 hour duration (3600 seconds)
 - Failed commands preserve their exit codes via `exec.ExitError`
 - Cache files are silently used if valid, ignored if expired/corrupt
-- gopass store must be initialized before use (`gopass init`)
+- If password is forgotten, vault cannot be recovered (must reinitialize)
+- Vault is atomic-write (writes to .tmp, then renames)
 
-## Migration from Bitwarden
+## Migration History
 
-The old Bitwarden backend code is in `bitwarden.go` but is no longer used. The migration was:
+### From gopass/GPG (Previous Version)
+**Before:**
+- Direct gopass library calls
+- Local GPG operations
+- Automatic GPG/session handling via gpg-agent
+- ~50-100ms overhead
+- Required gopass + GPG installed
 
+**After (Current):**
+- Custom password-based encryption
+- Pure Go crypto (Argon2id + AES-256-GCM)
+- Password prompt on each vault access
+- ~50ms overhead
+- Zero external dependencies
+
+The command interface remains identical - only the backend changed.
+
+### From Bitwarden (Original Version)
 **Before:**
 - Shell exec to `bw` CLI
 - Network calls to Bitwarden servers
@@ -187,18 +237,36 @@ The old Bitwarden backend code is in `bitwarden.go` but is no longer used. The m
 - ~2.8s per operation
 
 **After:**
-- Direct gopass library calls
-- Local GPG operations only
-- Automatic GPG/session handling
-- ~50-100ms overhead
-
-The command interface remains identical - only the backend changed.
+- Custom encryption (see above)
+- Local operations only
+- Simple password prompt
+- ~50ms overhead
 
 ## Testing Notes
 
 - Manual testing instructions in `TEST.md`
-- Use `PASSWORD_STORE_DIR=/tmp/test-store` for isolated testing
-- GPG agent must be running for decryption
-- Set `GPG_TTY=$(tty)` if seeing "inappropriate ioctl" errors
-- First decrypt in a session requires GPG passphrase
-- Subsequent operations use gpg-agent cache
+- Test vault can be created at custom location (modify `getVaultPath()`)
+- No GPG setup needed
+- First operation in session requires password
+- STS cache works identically to previous versions
+
+## Vault File Format Details
+
+The vault uses a versioned format to allow future migrations:
+
+**Version 1** (current):
+- Salt: 32 random bytes (for Argon2id)
+- Nonce: 12 bytes (for AES-GCM)
+- Data: AES-GCM encrypted JSON (includes authentication tag)
+
+If vault version doesn't match `vaultVersion` constant in `crypto.go`, decryption fails with error.
+
+## Code Organization Principles
+
+- `crypto.go` - Pure crypto primitives (no I/O, no user interaction)
+- `vault.go` - Vault management (prompts, file I/O, CRUD)
+- `commands.go` - Command handlers (orchestration)
+- `main.go` - Entry point (routing only)
+- `aws.go` - AWS-specific logic (unchanged from previous versions)
+
+Keep crypto operations separate from business logic for easier auditing and testing.

@@ -1,100 +1,86 @@
-# bw-aws Quick Start Guide
+# caws Quick Start Guide
 
-Get up and running with bw-aws in 5 minutes!
+Get up and running with caws in 5 minutes!
 
 ## Prerequisites Check
 
 ```bash
-# Check if Bitwarden CLI is installed
-bw --version
-
 # Check if AWS CLI is installed
 aws --version
 ```
 
-If either is missing:
-- **Bitwarden CLI**: https://bitwarden.com/help/cli/
-  - Ubuntu: `sudo snap install bw`
-  - macOS: `brew install bitwarden-cli`
+If missing:
 - **AWS CLI**: https://aws.amazon.com/cli/
+  - macOS: `brew install awscli`
+  - Ubuntu: `sudo apt install awscli`
+
+That's it! No other dependencies needed.
 
 ## Installation
 
 ### Option 1: Using the install script (recommended)
 
 ```bash
-cd bw-aws
+cd caws
 ./install.sh
 ```
 
 ### Option 2: Manual installation
 
 ```bash
-cd bw-aws
-go build -o bw-aws
-sudo mv bw-aws /usr/local/bin/
-# or for user install: mv bw-aws ~/.local/bin/
+cd caws
+go build -o caws
+sudo mv caws /usr/local/bin/
+# or for user install: mv caws ~/.local/bin/
 ```
 
 ### Option 3: Use the pre-built binary
 
-The `bw-aws` binary is already compiled! Just move it:
+If a `caws` binary already exists:
 
 ```bash
-cd bw-aws
-sudo mv bw-aws /usr/local/bin/
-# or: mv bw-aws ~/.local/bin/
+cd caws
+sudo mv caws /usr/local/bin/
+# or: mv caws ~/.local/bin/
 ```
 
-## Setup (5 steps)
+## Setup (4 steps)
 
-### 1. Login to Bitwarden
+### 1. Initialize your vault
 
 ```bash
-bw-aws login
+caws init
 ```
 
-You'll be prompted for your Bitwarden master password.
+You'll be prompted to create a master password. **Choose a strong password** - this encrypts all your AWS credentials.
 
-### 2. Export the session key
+**Important**: There is no password recovery! If you forget it, you'll need to start over.
 
-Copy the session key from the output and export it:
-
-```bash
-export BW_SESSION="your-session-key-here"
-```
-
-**Important**: Add this to your `~/.bashrc` or `~/.zshrc` to make it persistent:
+### 2. Add your first AWS profile
 
 ```bash
-echo 'export BW_SESSION="your-session-key-here"' >> ~/.bashrc
-source ~/.bashrc
-```
-
-### 3. Add your first AWS profile
-
-```bash
-bw-aws add myprofile
+caws add myprofile
 ```
 
 Enter when prompted:
+- Vault password (the one you just created)
 - AWS Access Key ID (from AWS IAM)
 - AWS Secret Access Key (input will be hidden)
 - Default Region (e.g., `us-east-1`) - optional
 - MFA Serial ARN - optional
 
-### 4. Verify it worked
+### 3. Verify it worked
 
 ```bash
-bw-aws list
+caws list
 ```
 
-You should see your profile listed.
+Enter your vault password. You should see your profile listed.
 
-### 5. Use it!
+### 4. Use it!
 
 ```bash
-bw-aws exec myprofile -- aws sts get-caller-identity
+caws exec myprofile -- aws sts get-caller-identity
 ```
 
 If this shows your AWS account info, you're all set! 🎉
@@ -103,19 +89,19 @@ If this shows your AWS account info, you're all set! 🎉
 
 ```bash
 # List S3 buckets
-bw-aws exec myprofile -- aws s3 ls
+caws exec myprofile -- aws s3 ls
 
 # Check who you are
-bw-aws exec myprofile -- aws sts get-caller-identity
+caws exec myprofile -- aws sts get-caller-identity
 
 # Run any AWS command
-bw-aws exec myprofile -- aws ec2 describe-instances
+caws exec myprofile -- aws ec2 describe-instances
 
 # Use with Terraform
-bw-aws exec myprofile -- terraform plan
+caws exec myprofile -- terraform plan
 
 # See environment variables
-bw-aws exec myprofile -- env | grep AWS
+caws exec myprofile -- env | grep AWS
 ```
 
 ## Tips
@@ -125,8 +111,8 @@ bw-aws exec myprofile -- env | grep AWS
 Add to `~/.bashrc` or `~/.zshrc`:
 
 ```bash
-alias bwa='bw-aws'
-alias awsexec='bw-aws exec'
+alias ca='caws'
+alias awsexec='caws exec'
 ```
 
 Then use:
@@ -138,54 +124,63 @@ awsexec myprofile -- aws s3 ls
 ### 2. Add multiple profiles
 
 ```bash
-bw-aws add personal
-bw-aws add work-dev
-bw-aws add work-prod
+caws add personal
+caws add work-dev
+caws add work-prod
 ```
 
-### 3. If your session expires
+All profiles are stored in the same encrypted vault.
 
-Just login again:
+### 3. Understanding password prompts
 
-```bash
-bw-aws login
-export BW_SESSION="new-key"
-```
+You'll be prompted for your vault password:
+- Every time you add/list/remove profiles
+- Approximately once per hour when running commands (due to STS caching)
+
+This is normal! Your password is never cached in memory for security.
 
 ## Troubleshooting
 
-**"Not logged in to Bitwarden"**
-→ Run `bw-aws login` and export the `BW_SESSION`
+**"Vault not found"**
+→ Run `caws init` first to create your vault
+
+**"Incorrect password or corrupted vault"**
+→ Check your password. If forgotten, there's no recovery - you'll need to delete `~/.caws/vault.enc` and start over.
 
 **"Failed to get session token"**
 → Check that AWS CLI is installed and your credentials are valid
 
-**"Item not found"**
-→ The profile doesn't exist, run `bw-aws list` to see available profiles
+**"Profile not found"**
+→ The profile doesn't exist, run `caws list` to see available profiles
 
 ## What's Happening Behind the Scenes?
 
-1. Your AWS credentials (Access Key + Secret) are stored **encrypted** in Bitwarden
-2. When you run a command, bw-aws:
-   - Fetches credentials from Bitwarden
+1. Your AWS credentials (Access Key + Secret) are stored **encrypted** in `~/.caws/vault.enc`
+   - Encryption: Argon2id + AES-256-GCM (industry standard)
+   - File permissions: 0600 (only you can read/write)
+
+2. When you run a command, caws:
+   - Prompts for your vault password
+   - Decrypts your credentials
    - Calls AWS STS to get **temporary credentials** (valid for 1 hour)
    - Caches the temporary credentials locally
    - Runs your command with the temp credentials
 
-3. The next time you run a command within an hour, it uses the cached credentials (no need to call STS again)
+3. The next time you run a command within an hour, it uses the cached credentials (but still asks for your vault password)
 
-**Security**: Your long-term AWS credentials stay encrypted in Bitwarden and are never written to disk unencrypted!
+**Security**: Your long-term AWS credentials are always encrypted and never written to disk in plaintext!
 
 ## Next Steps
 
 - Read the full [README.md](README.md) for advanced features
 - Set up MFA for extra security
 - Add more AWS profiles for different accounts/roles
+- Consider backing up `~/.caws/vault.enc` to a secure location
 
 ## Getting Help
 
 ```bash
-bw-aws help
+caws help
 ```
 
 Or check the [README.md](README.md) for detailed documentation.

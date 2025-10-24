@@ -1,57 +1,33 @@
-# bw-aws
+# caws
 
-A lightweight AWS credential manager that uses gopass as the backend storage. Built as a fast, local-first alternative to aws-vault with the security and convenience of GPG-encrypted secrets.
+A lightweight, self-contained AWS credential manager with password-based encryption. Built as a fast, local-first alternative to aws-vault with zero external dependencies.
 
 ## Features
 
-- 🔐 **Secure storage** - Credentials encrypted with GPG in gopass
-- 🚀 **Blazing fast** - Direct library integration (~800ms vs aws-vault's 2-3s)
+- 🔐 **Secure storage** - Credentials encrypted with Argon2id + AES-256-GCM
+- 🚀 **Blazing fast** - Direct encryption, no external processes (~50ms overhead)
 - 🔄 **Automatic credential rotation** - Uses AWS STS for temporary credentials
 - 💾 **Smart caching** - Caches temporary credentials to minimize STS calls
 - 🔑 **MFA support** - Works with AWS MFA requirements
-- 🌍 **Git-based sync** - Access credentials across devices via Git
-- 📦 **Zero runtime dependencies** - Single binary (just needs gopass + GPG)
+- 📦 **Zero dependencies** - Single self-contained binary
+- 🔒 **Simple security** - Password-protected vault, no GPG setup required
 
 ## Prerequisites
 
-- **gopass** - [Installation guide](https://github.com/gopasspw/gopass#installation)
-- **GPG** (GnuPG 2.x) - Usually pre-installed on Linux/macOS
 - **AWS CLI** (`aws`) - [Installation guide](https://aws.amazon.com/cli/)
 - Go 1.22+ (for building from source)
 
-### Install gopass
-
-```bash
-# macOS
-brew install gopass
-
-# Ubuntu/Debian
-sudo apt install gopass
-
-# Or download from https://github.com/gopasspw/gopass/releases
-```
-
-### Initialize gopass
-
-If you haven't used gopass before:
-
-```bash
-# Initialize with your GPG key
-gopass init
-
-# Or specify a key explicitly
-gopass init <your-gpg-key-id>
-```
+That's it! No gopass, no GPG, no external password managers.
 
 ## Installation
 
 ### From Source
 
 ```bash
-git clone <your-repo-url>
-cd bw-aws
-go build -o bw-aws
-sudo mv bw-aws /usr/local/bin/
+git clone https://github.com/timdev/caws
+cd caws
+go build -o caws
+sudo mv caws /usr/local/bin/
 ```
 
 ### Binary Release
@@ -59,52 +35,72 @@ sudo mv bw-aws /usr/local/bin/
 Download the latest binary from the releases page and move it to your PATH:
 
 ```bash
-chmod +x bw-aws
-sudo mv bw-aws /usr/local/bin/
+chmod +x caws
+sudo mv caws /usr/local/bin/
 ```
 
 ## Quick Start
 
-### 1. Add AWS Credentials
+### 1. Initialize Vault
+
+Create a new encrypted vault with a master password:
 
 ```bash
-bw-aws add production
+caws init
 ```
 
-You'll be prompted for:
+You'll be prompted to set a master password. This password encrypts all your AWS credentials.
+
+### 2. Add AWS Credentials
+
+```bash
+caws add production
+```
+
+Enter your vault password, then provide:
 - AWS Access Key ID
 - AWS Secret Access Key
 - Default Region (optional)
 - MFA Serial ARN (optional)
 
-Credentials are stored at `~/.local/share/gopass/stores/root/aws/<profile>`.
+Credentials are stored encrypted at `~/.caws/vault.enc`.
 
-### 2. Use Your Credentials
+### 3. Use Your Credentials
 
 Execute any AWS command with temporary credentials:
 
 ```bash
-bw-aws exec production -- aws s3 ls
-bw-aws exec production -- aws ec2 describe-instances
-bw-aws exec production -- terraform plan
+caws exec production -- aws s3 ls
+caws exec production -- aws ec2 describe-instances
+caws exec production -- terraform plan
 ```
 
 ## Commands
 
-### `bw-aws add <profile>`
+### `caws init`
 
-Add a new AWS profile to gopass.
+Initialize a new encrypted vault.
 
 ```bash
-bw-aws add my-profile
+caws init
 ```
 
-### `bw-aws list`
+Creates `~/.caws/vault.enc` protected by your master password.
 
-List all AWS profiles stored in gopass.
+### `caws add <profile>`
+
+Add a new AWS profile to the vault.
 
 ```bash
-bw-aws list
+caws add my-profile
+```
+
+### `caws list`
+
+List all AWS profiles stored in the vault.
+
+```bash
+caws list
 ```
 
 Example output:
@@ -115,60 +111,78 @@ Available AWS profiles:
   • staging
 ```
 
-### `bw-aws exec <profile> -- <command>`
+### `caws exec <profile> -- <command>`
 
 Execute a command with AWS credentials injected into the environment.
 
 ```bash
-bw-aws exec production -- aws sts get-caller-identity
-bw-aws exec dev -- env | grep AWS
+caws exec production -- aws sts get-caller-identity
+caws exec dev -- env | grep AWS
 ```
 
 The tool will:
-1. Fetch credentials from gopass (GPG-encrypted)
-2. Request temporary credentials from AWS STS (1 hour duration)
-3. Cache the temporary credentials
-4. Execute your command with credentials in the environment
+1. Prompt for vault password (first time, then every ~55 minutes)
+2. Decrypt credentials from vault
+3. Request temporary credentials from AWS STS (1 hour duration)
+4. Cache the temporary credentials
+5. Execute your command with credentials in the environment
 
-### `bw-aws remove <profile>`
+### `caws remove <profile>`
 
-Remove a profile from gopass.
+Remove a profile from the vault.
 
 ```bash
-bw-aws remove old-profile
+caws remove old-profile
 ```
 
 ## How It Works
 
 ### Credential Flow
 
-1. **Storage**: Long-term AWS credentials (Access Key ID + Secret Access Key) are stored in gopass, encrypted with GPG
-2. **Retrieval**: When you run a command, bw-aws uses the gopass Go library to decrypt credentials
-3. **STS Exchange**: bw-aws calls AWS STS to exchange long-term credentials for temporary credentials (1 hour validity)
-4. **Caching**: Temporary credentials are cached locally in `~/.bw-aws/cache/` to avoid repeated STS calls
-5. **Execution**: Your command runs with temporary credentials in the environment
+1. **Storage**: Long-term AWS credentials are encrypted with AES-256-GCM and stored in `~/.caws/vault.enc`
+2. **Password Derivation**: Master password is converted to encryption key using Argon2id (memory-hard, GPU-resistant)
+3. **Retrieval**: When you run a command, caws prompts for password and decrypts credentials
+4. **STS Exchange**: caws calls AWS STS to exchange long-term credentials for temporary credentials (1 hour validity)
+5. **Caching**: Temporary credentials are cached in `~/.caws/cache/` to avoid repeated STS calls
+6. **Execution**: Your command runs with temporary credentials in the environment
 
 ### Security Model
 
-- ✅ Long-term credentials stored GPG-encrypted via gopass
+- ✅ Long-term credentials encrypted with Argon2id + AES-256-GCM
+- ✅ Vault file permissions: 0600 (owner read/write only)
+- ✅ Password required approximately once per hour per active profile
 - ✅ Temporary credentials have a 1-hour lifetime
 - ✅ MFA can be required for STS token generation
-- ✅ Cache files are stored with 0600 permissions (owner read/write only)
-- ✅ No credentials are written to shell history
-- ✅ GPG passphrase required for decryption (cached by gpg-agent)
+- ✅ Cache files stored with 0600 permissions
+- ✅ No credentials written to shell history
+- ✅ No plaintext long-term credentials ever touch disk
 
-### gopass Structure
+### Vault Structure
 
-Credentials are stored in gopass with this structure:
+The vault is a single encrypted JSON file at `~/.caws/vault.enc`:
 
+```json
+{
+  "version": 1,
+  "salt": "base64-encoded-random-salt",
+  "nonce": "base64-encoded-random-nonce",
+  "data": "base64-encoded-encrypted-credentials"
+}
 ```
-Path: aws/<profile-name>
-Password: (informational text)
-Fields:
-  - access_key: AKIA...
-  - secret_key: ****
-  - region: us-east-1 (optional)
-  - mfa_serial: arn:aws:iam::123456789012:mfa/user (optional)
+
+When decrypted, it contains:
+
+```json
+{
+  "profiles": {
+    "production": {
+      "access_key": "AKIA...",
+      "secret_key": "****",
+      "region": "us-east-1",
+      "mfa_serial": "arn:aws:iam::123456789012:mfa/user"
+    }
+  }
+}
 ```
 
 ## Advanced Usage
@@ -178,30 +192,40 @@ Fields:
 If your AWS account requires MFA, add the MFA serial ARN when creating the profile:
 
 ```bash
-bw-aws add production
-# ... enter credentials ...
+caws add production
+# ... enter vault password and credentials ...
 MFA Serial ARN: arn:aws:iam::123456789012:mfa/your-username
 ```
 
 When executing commands, you'll be prompted for your MFA code:
 
 ```bash
-bw-aws exec production -- aws s3 ls
+caws exec production -- aws s3 ls
+Enter vault password: ****
+Getting temporary credentials...
 Enter MFA code: 123456
 ```
+
+### Password Entry Frequency
+
+With STS credential caching, you typically enter your vault password:
+- **Once per hour per active profile** during normal usage
+- Credentials are decrypted on-demand
+- STS temporary credentials cached for ~55 minutes
+- No plaintext long-term credentials persist on disk
 
 ### Credential Caching
 
 Temporary credentials are cached for 1 hour. The cache location is:
 
 ```
-~/.bw-aws/cache/<profile>.json
+~/.caws/cache/<profile>.json
 ```
 
 To clear the cache for a profile:
 
 ```bash
-rm ~/.bw-aws/cache/production.json
+rm ~/.caws/cache/production.json
 ```
 
 ### Multiple Profiles
@@ -209,90 +233,68 @@ rm ~/.bw-aws/cache/production.json
 You can manage multiple AWS accounts:
 
 ```bash
-bw-aws add personal
-bw-aws add work-dev
-bw-aws add work-prod
+caws add personal
+caws add work-dev
+caws add work-prod
 
-bw-aws exec personal -- aws s3 ls
-bw-aws exec work-prod -- aws ec2 describe-instances
+caws exec personal -- aws s3 ls
+caws exec work-prod -- aws ec2 describe-instances
 ```
 
 ### Shell Integration
 
-For easier access, you can create shell functions:
+For easier access, you can create shell aliases:
 
 ```bash
 # Add to ~/.bashrc or ~/.zshrc
-alias bwa='bw-aws'
+alias ca='caws'
 aws-exec() {
-    bw-aws exec "$@"
+    caws exec "$@"
 }
 ```
 
 Then use:
 
 ```bash
-bwa list
+ca list
 aws-exec production -- aws s3 ls
-```
-
-### Using Alternative gopass Stores
-
-If you use multiple gopass stores, set `PASSWORD_STORE_DIR`:
-
-```bash
-PASSWORD_STORE_DIR=/path/to/store bw-aws add profile
-PASSWORD_STORE_DIR=/path/to/store bw-aws exec profile -- aws s3 ls
 ```
 
 ## Performance
 
 | Operation | Time | Notes |
 |-----------|------|-------|
-| Cold start (first exec) | ~1.4s | Includes gopass decrypt + AWS STS call |
-| Warm start (cached STS) | ~0.8s | Just gopass decrypt + AWS CLI |
-| bw-aws overhead | ~50-100ms | gopass library performance |
+| Cold start (first exec) | ~1.4s | Includes vault decrypt + AWS STS call |
+| Warm start (cached STS) | ~0.1s | No vault access needed |
+| caws overhead | ~50ms | Pure Go encryption/decryption |
 
-Compare to aws-vault: **3-6x faster** for typical operations.
+Compare to aws-vault: **Similar or faster** for typical operations.
 
 ## Comparison with aws-vault
 
-| Feature | bw-aws | aws-vault |
-|---------|--------|-----------|
-| Backend | gopass (GPG) | OS keyring/pass/file |
-| Cross-device sync | ✅ Via Git | ❌ Manual |
+| Feature | caws | aws-vault |
+|---------|------|-----------|
+| Backend | Password + AES-256-GCM | OS keyring/pass/file |
+| Dependencies | Zero (self-contained) | None (self-contained) |
+| Setup | One command (`caws init`) | One command |
 | MFA support | ✅ Yes | ✅ Yes |
 | Credential caching | ✅ Yes | ✅ Yes |
-| Performance | ✅ Very fast (~800ms) | ⚠️ Slower (2-3s) |
-| Setup complexity | Low (if gopass exists) | Low |
+| Performance | ✅ Very fast (~50ms) | ✅ Very fast |
 | IAM role assumption | ❌ Not yet | ✅ Yes |
 
 ## Troubleshooting
 
-### "Failed to open gopass store"
+### "Vault not found"
 
-Make sure gopass is initialized:
-
-```bash
-gopass ls
-```
-
-If not initialized:
+Initialize the vault first:
 
 ```bash
-gopass init
+caws init
 ```
 
-### GPG Passphrase Prompts
+### "Incorrect password or corrupted vault"
 
-The first time you use bw-aws in a session, GPG will prompt for your passphrase. This is normal and secure. The passphrase is cached by `gpg-agent` for subsequent operations.
-
-To adjust cache timeout, edit `~/.gnupg/gpg-agent.conf`:
-
-```
-default-cache-ttl 3600
-max-cache-ttl 7200
-```
+Your password is wrong, or the vault file is corrupted. If you've forgotten your password, there's no recovery - you'll need to delete `~/.caws/vault.enc` and start over.
 
 ### "Failed to get session token"
 
@@ -302,33 +304,27 @@ max-cache-ttl 7200
 
 ### "Profile not found"
 
-The profile doesn't exist in gopass. List profiles with:
+The profile doesn't exist in your vault. List profiles with:
 
 ```bash
-bw-aws list
-```
-
-Or check gopass directly:
-
-```bash
-gopass ls aws/
+caws list
 ```
 
 ## Building from Source
 
 ```bash
 # Clone the repository
-git clone <repo-url>
-cd bw-aws
+git clone https://github.com/timdev/caws
+cd caws
 
 # Build
-go build -o bw-aws
+go build -o caws
 
 # Install
-sudo mv bw-aws /usr/local/bin/
+sudo mv caws /usr/local/bin/
 
 # Or for local user install
-mv bw-aws ~/bin/  # Make sure ~/bin is in your PATH
+mv caws ~/.local/bin/  # Make sure ~/.local/bin is in your PATH
 ```
 
 ## Contributing
@@ -343,33 +339,37 @@ MIT License - feel free to use this in your own projects!
 
 - [ ] Support for IAM role assumption
 - [ ] Support for role chaining
-- [ ] Config file support
+- [ ] Config file support (e.g., default profile)
 - [ ] Shell completion scripts
 - [ ] Windows support improvements
 - [ ] Export credentials to other formats
+- [ ] Vault password change command
 
 ## Security Notes
 
 ⚠️ **Important Security Considerations:**
 
-1. **GPG Key Security**: Your gopass secrets are only as secure as your GPG private key. Keep it safe and use a strong passphrase.
+1. **Master Password**: Your credentials are only as secure as your master password. Use a strong, unique password.
 
-2. **Cache Directory**: Temporary credentials are cached in `~/.bw-aws/cache/`. These files contain valid AWS credentials for up to 1 hour. Ensure your home directory has proper permissions.
+2. **Cache Directory**: Temporary credentials are cached in `~/.caws/cache/`. These files contain valid AWS credentials for up to 1 hour. The tool sets proper permissions (0600) automatically.
 
 3. **MFA Recommended**: If your AWS account contains sensitive resources, enable MFA on your IAM user.
 
 4. **Regular Rotation**: Rotate your long-term AWS credentials regularly according to your security policy.
 
-5. **Git Sync**: If syncing gopass via Git, ensure your Git remotes are secure (use SSH with key auth, not HTTPS with passwords).
+5. **No Password Recovery**: If you forget your master password, there's no way to recover it. You'll need to reinitialize and re-add all credentials.
 
-## Why gopass?
+6. **Vault Backups**: Consider backing up `~/.caws/vault.enc` to a secure location. Without your password, the backup is useless to an attacker.
 
-- **Local-first**: No network calls for credential retrieval (unlike Bitwarden)
-- **Fast**: Direct Go library integration, no CLI overhead
-- **Git-based sync**: Control when and how credentials sync across machines
-- **Battle-tested**: gopass is widely used and actively maintained
-- **Open source**: Fully auditable password management
+## Why caws?
+
+- **Simple setup**: No GPG, no gopass, no external password managers
+- **Self-contained**: Single binary with zero dependencies
+- **Fast**: Pure Go encryption with minimal overhead
+- **Secure**: Industry-standard Argon2id + AES-256-GCM encryption
+- **Local-first**: No network calls for credential retrieval
+- **Transparent**: Small codebase, easy to audit
 
 ## Author
 
-Built as a fast, local-first alternative to aws-vault for users who prefer gopass for credential management.
+Built as a fast, simple, local-first alternative to aws-vault for developers who want credential management without external dependencies.

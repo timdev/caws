@@ -16,9 +16,14 @@ func main() {
 	command := os.Args[1]
 
 	switch command {
+	case "init":
+		if err := InitVault(); err != nil {
+			fmt.Printf("Error: %v\n", err)
+			os.Exit(1)
+		}
 	case "add":
 		if len(os.Args) < 3 {
-			fmt.Println("Usage: bw-aws add <profile-name>")
+			fmt.Println("Usage: caws add <profile-name>")
 			os.Exit(1)
 		}
 		handleAdd(os.Args[2])
@@ -26,18 +31,18 @@ func main() {
 		handleList()
 	case "exec":
 		if len(os.Args) < 4 {
-			fmt.Println("Usage: bw-aws exec <profile-name> -- <command>")
+			fmt.Println("Usage: caws exec <profile-name> -- <command>")
 			os.Exit(1)
 		}
 		handleExec(os.Args[2], os.Args[3:])
 	case "remove", "rm":
 		if len(os.Args) < 3 {
-			fmt.Println("Usage: bw-aws remove <profile-name>")
+			fmt.Println("Usage: caws remove <profile-name>")
 			os.Exit(1)
 		}
 		handleRemove(os.Args[2])
 	case "version", "--version", "-v":
-		fmt.Printf("bw-aws version %s\n", version)
+		fmt.Printf("caws version %s\n", version)
 	case "help", "--help", "-h":
 		printUsage()
 	default:
@@ -48,24 +53,25 @@ func main() {
 }
 
 func printUsage() {
-	fmt.Println(`bw-aws - AWS credential manager using gopass
+	fmt.Println(`caws - Fast, local-first AWS credential manager
 
 Usage:
-  bw-aws add <profile>                   Add AWS credentials for a profile
-  bw-aws list                            List available AWS profiles
-  bw-aws exec <profile> -- <command>     Execute command with AWS credentials
-  bw-aws remove <profile>                Remove a profile from gopass
-  bw-aws version                         Show version
+  caws init                            Initialize a new encrypted vault
+  caws add <profile>                   Add AWS credentials for a profile
+  caws list                            List available AWS profiles
+  caws exec <profile> -- <command>     Execute command with AWS credentials
+  caws remove <profile>                Remove a profile from vault
+  caws version                         Show version
 
 Examples:
-  bw-aws add production
-  bw-aws exec production -- aws s3 ls
-  bw-aws exec dev -- env | grep AWS
+  caws init
+  caws add production
+  caws exec production -- aws s3 ls
+  caws exec dev -- env | grep AWS
 
-Credentials are stored in gopass with the path:
-  "aws/<profile-name>"
+Credentials are stored encrypted in:
+  ~/.caws/vault.enc
 
 Prerequisites:
-  - gopass must be installed and initialized (run 'gopass init' first)
-  - GPG must be configured`)
+  - AWS CLI must be installed (for STS operations)`)
 }

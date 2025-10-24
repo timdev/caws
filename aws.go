@@ -24,6 +24,7 @@ type STSCredentials struct {
 	SecretAccessKey string    `json:"SecretAccessKey"`
 	SessionToken    string    `json:"SessionToken"`
 	Expiration      time.Time `json:"Expiration"`
+	Region          string    `json:"Region,omitempty"`
 }
 
 // AssumeRole calls AWS STS to get temporary credentials
@@ -68,6 +69,9 @@ func AssumeRole(creds *AWSCredentials, duration int32, mfaCode string) (*STSCred
 	if err := json.Unmarshal(output, &response); err != nil {
 		return nil, fmt.Errorf("failed to parse STS response: %w", err)
 	}
+
+	// Add region to credentials for caching
+	response.Credentials.Region = creds.Region
 
 	return &response.Credentials, nil
 }
@@ -120,9 +124,9 @@ func CacheCredentials(profile string, creds *STSCredentials) error {
 func getCacheDir() string {
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
-		return "/tmp/bw-aws-cache"
+		return "/tmp/caws-cache"
 	}
-	return fmt.Sprintf("%s/.bw-aws/cache", homeDir)
+	return fmt.Sprintf("%s/.caws/cache", homeDir)
 }
 
 // SetEnvVars sets AWS environment variables

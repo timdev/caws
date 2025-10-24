@@ -1,5 +1,5 @@
 # Binaries
-bw-aws
+caws
 *.exe
 *.dll
 *.so
@@ -35,3 +35,4 @@ config
 dist/
 build/
 .claude
+.tool-versions

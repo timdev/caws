@@ -10,7 +10,7 @@ import (
 
 // handleAdd handles adding a new AWS profile
 func handleAdd(profile string) {
-	gp, err := NewGopassClient()
+	gp, err := NewVaultClient()
 	if err != nil {
 		fmt.Printf("Error: %v\n", err)
 		os.Exit(1)
@@ -47,18 +47,18 @@ func handleAdd(profile string) {
 	mfaSerial, _ := reader.ReadString('\n')
 	mfaSerial = strings.TrimSpace(mfaSerial)
 
-	// Create credentials in gopass
+	// Create credentials in vault
 	if err := gp.CreateCredentials(profile, accessKey, secretKey, region, mfaSerial); err != nil {
-		fmt.Printf("Error creating profile in gopass: %v\n", err)
+		fmt.Printf("Error creating profile in vault: %v\n", err)
 		os.Exit(1)
 	}
 
-	fmt.Printf("\n✓ Successfully added profile '%s' to gopass\n", profile)
+	fmt.Printf("\n✓ Successfully added profile '%s' to vault\n", profile)
 }
 
 // handleList handles listing AWS profiles
 func handleList() {
-	gp, err := NewGopassClient()
+	gp, err := NewVaultClient()
 	if err != nil {
 		fmt.Printf("Error: %v\n", err)
 		os.Exit(1)
@@ -72,7 +72,7 @@ func handleList() {
 	}
 
 	if len(profiles) == 0 {
-		fmt.Println("No AWS profiles found. Add one with: bw-aws add <profile-name>")
+		fmt.Println("No AWS profiles found. Add one with: caws add <profile-name>")
 		return
 	}
 
@@ -91,13 +91,6 @@ func handleList() {
 
 // handleExec handles executing a command with AWS credentials
 func handleExec(profile string, args []string) {
-	gp, err := NewGopassClient()
-	if err != nil {
-		fmt.Printf("Error: %v\n", err)
-		os.Exit(1)
-	}
-	defer gp.Close()
-
 	// Skip "--" if present
 	if len(args) > 0 && args[0] == "--" {
 		args = args[1:]
@@ -108,17 +101,25 @@ func handleExec(profile string, args []string) {
 		os.Exit(1)
 	}
 
-	// Get credentials from gopass
-	creds, err := gp.GetCredentials(profile)
-	if err != nil {
-		fmt.Printf("Error getting profile '%s': %v\n", profile, err)
-		fmt.Println("Run 'bw-aws list' to see available profiles")
-		os.Exit(1)
-	}
-
-	// Check for cached credentials first
+	// Check for cached credentials FIRST (before prompting for password)
 	stsCreds, err := GetCachedCredentials(profile)
 	if err != nil {
+		// Cache miss or expired - need to get fresh credentials from vault
+		gp, err := NewVaultClient()
+		if err != nil {
+			fmt.Printf("Error: %v\n", err)
+			os.Exit(1)
+		}
+		defer gp.Close()
+
+		// Get credentials from vault
+		creds, err := gp.GetCredentials(profile)
+		if err != nil {
+			fmt.Printf("Error getting profile '%s': %v\n", profile, err)
+			fmt.Println("Run 'caws list' to see available profiles")
+			os.Exit(1)
+		}
+
 		fmt.Println("Getting temporary credentials...")
 
 		// Get MFA code if needed
@@ -148,7 +149,7 @@ func handleExec(profile string, args []string) {
 	}
 
 	// Set up environment
-	env := SetEnvVars(stsCreds, creds.Region)
+	env := SetEnvVars(stsCreds, stsCreds.Region)
 
 	// Execute command
 	cmd := exec.Command(args[0], args[1:]...)
@@ -168,7 +169,7 @@ func handleExec(profile string, args []string) {
 
 // handleRemove handles removing an AWS profile
 func handleRemove(profile string) {
-	gp, err := NewGopassClient()
+	gp, err := NewVaultClient()
 	if err != nil {
 		fmt.Printf("Error: %v\n", err)
 		os.Exit(1)
