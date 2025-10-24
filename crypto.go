@@ -29,8 +29,6 @@ type VaultData struct {
 type ProfileData struct {
 	AccessKey string `json:"access_key"`
 	SecretKey string `json:"secret_key"`
-	Region    string `json:"region,omitempty"`
-	MFASerial string `json:"mfa_serial,omitempty"`
 }
 
 const (

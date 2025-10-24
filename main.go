@@ -30,8 +30,8 @@ func main() {
 	case "list", "ls":
 		handleList()
 	case "exec":
-		if len(os.Args) < 4 {
-			fmt.Println("Usage: caws exec <profile-name> -- <command>")
+		if len(os.Args) < 3 {
+			fmt.Println("Usage: caws exec <profile-name> [-- <command>]")
 			os.Exit(1)
 		}
 		handleExec(os.Args[2], os.Args[3:])
@@ -59,6 +59,7 @@ Usage:
   caws init                            Initialize a new encrypted vault
   caws add <profile>                   Add AWS credentials for a profile
   caws list                            List available AWS profiles
+  caws exec <profile>                  Spawn subshell with AWS credentials
   caws exec <profile> -- <command>     Execute command with AWS credentials
   caws remove <profile>                Remove a profile from vault
   caws version                         Show version
@@ -66,11 +67,19 @@ Usage:
 Examples:
   caws init
   caws add production
-  caws exec production -- aws s3 ls
+  caws exec production                 # Spawns shell with credentials
+  caws exec production -- aws s3 ls    # Run single command
   caws exec dev -- env | grep AWS
 
-Credentials are stored encrypted in:
-  ~/.caws/vault.enc
+Credentials stored in:
+  ~/.caws/vault.enc (encrypted access keys)
+  ~/.aws/config (profile settings: region, MFA)
+
+Environment variables set:
+  AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_SESSION_TOKEN
+  AWS_VAULT=<profile> (for shell prompts)
+  AWS_REGION, AWS_DEFAULT_REGION
+  AWS_CREDENTIAL_EXPIRATION
 
 Prerequisites:
   - AWS CLI must be installed (for STS operations)`)

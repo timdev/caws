@@ -72,13 +72,12 @@ func (v *VaultClient) GetCredentials(profile string) (*AWSCredentials, error) {
 	return &AWSCredentials{
 		AccessKeyID:     profileData.AccessKey,
 		SecretAccessKey: profileData.SecretKey,
-		Region:          profileData.Region,
-		MFASerial:       profileData.MFASerial,
+		// Region and MFASerial will be loaded from ~/.aws/config instead
 	}, nil
 }
 
 // CreateCredentials stores AWS credentials for a profile
-func (v *VaultClient) CreateCredentials(profile string, accessKey, secretKey, region, mfaSerial string) error {
+func (v *VaultClient) CreateCredentials(profile string, accessKey, secretKey string) error {
 	data, err := v.loadVault()
 	if err != nil {
 		return err
@@ -93,8 +92,6 @@ func (v *VaultClient) CreateCredentials(profile string, accessKey, secretKey, re
 	data.Profiles[profile] = ProfileData{
 		AccessKey: accessKey,
 		SecretKey: secretKey,
-		Region:    region,
-		MFASerial: mfaSerial,
 	}
 
 	return v.saveVault(data)
@@ -108,11 +105,21 @@ func (v *VaultClient) ListProfiles() ([]ProfileInfo, error) {
 	}
 
 	profiles := []ProfileInfo{}
-	for name, profileData := range data.Profiles {
+	for name := range data.Profiles {
+		// Get config settings for this profile
+		configSettings, err := getConfigSettings(name)
+		if err != nil {
+			// Non-fatal - just skip config info for this profile
+			profiles = append(profiles, ProfileInfo{
+				Name: name,
+			})
+			continue
+		}
+
 		profiles = append(profiles, ProfileInfo{
 			Name:      name,
-			Region:    profileData.Region,
-			MFASerial: profileData.MFASerial,
+			Region:    configSettings.Region,
+			MFASerial: configSettings.MFASerial,
 		})
 	}
 

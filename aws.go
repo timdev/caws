@@ -130,10 +130,10 @@ func getCacheDir() string {
 }
 
 // SetEnvVars sets AWS environment variables
-func SetEnvVars(creds *STSCredentials, region string) []string {
+func SetEnvVars(profile string, creds *STSCredentials, region string) []string {
 	env := os.Environ()
-	
-	// Remove existing AWS env vars
+
+	// Remove existing AWS env vars (including AWS_PROFILE)
 	filtered := []string{}
 	for _, e := range env {
 		if !isAWSEnvVar(e) {
@@ -145,7 +145,13 @@ func SetEnvVars(creds *STSCredentials, region string) []string {
 	filtered = append(filtered, fmt.Sprintf("AWS_ACCESS_KEY_ID=%s", creds.AccessKeyID))
 	filtered = append(filtered, fmt.Sprintf("AWS_SECRET_ACCESS_KEY=%s", creds.SecretAccessKey))
 	filtered = append(filtered, fmt.Sprintf("AWS_SESSION_TOKEN=%s", creds.SessionToken))
-	
+
+	// Add AWS_VAULT for shell prompt integration (matches aws-vault behavior)
+	filtered = append(filtered, fmt.Sprintf("AWS_VAULT=%s", profile))
+
+	// Add credential expiration timestamp
+	filtered = append(filtered, fmt.Sprintf("AWS_CREDENTIAL_EXPIRATION=%s", creds.Expiration.Format(time.RFC3339)))
+
 	if region != "" {
 		filtered = append(filtered, fmt.Sprintf("AWS_DEFAULT_REGION=%s", region))
 		filtered = append(filtered, fmt.Sprintf("AWS_REGION=%s", region))
@@ -163,6 +169,9 @@ func isAWSEnvVar(envVar string) bool {
 		"AWS_SECURITY_TOKEN=",
 		"AWS_DEFAULT_REGION=",
 		"AWS_REGION=",
+		"AWS_PROFILE=", // Filter this out - we don't set it
+		"AWS_VAULT=",    // Filter old value
+		"AWS_CREDENTIAL_EXPIRATION=", // Filter old value
 	}
 
 	for _, prefix := range awsPrefixes {
