@@ -1,0 +1,37 @@
+# Binaries
+bw-aws
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Test binary
+*.test
+
+# Output of the go coverage tool
+*.out
+
+# Go workspace file
+go.work
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Credentials (just in case)
+*.pem
+*.key
+credentials
+config
+
+# Build artifacts
+dist/
+build/
+.claude
