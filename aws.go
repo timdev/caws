@@ -237,12 +237,9 @@ func getCacheDir() string {
 		return filepath.Join(testDir, "cache")
 	}
 
-	// Normal path
-	homeDir, err := os.UserHomeDir()
-	if err != nil {
-		return "/tmp/caws-cache"
-	}
-	return fmt.Sprintf("%s/.caws/cache", homeDir)
+	// XDG-compliant path: $XDG_CACHE_HOME/caws
+	cacheHome := getXDGCacheHome()
+	return filepath.Join(cacheHome, "caws")
 }
 
 // SetEnvVars sets AWS environment variables

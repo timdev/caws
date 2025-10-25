@@ -227,12 +227,9 @@ func getVaultPath() string {
 		return filepath.Join(testDir, "vault.enc")
 	}
 
-	// Normal path
-	homeDir, err := os.UserHomeDir()
-	if err != nil {
-		return "/tmp/caws-vault.enc"
-	}
-	return fmt.Sprintf("%s/.caws/vault.enc", homeDir)
+	// XDG-compliant path: $XDG_DATA_HOME/caws/vault.enc
+	dataHome := getXDGDataHome()
+	return filepath.Join(dataHome, "caws", "vault.enc")
 }
 
 // InitVault creates a new encrypted vault

@@ -79,7 +79,8 @@ Examples:
   caws login production | pbcopy       # Copy console URL to clipboard
 
 Credentials stored in:
-  ~/.caws/vault.enc (encrypted access keys)
+  $XDG_DATA_HOME/caws/vault.enc (encrypted access keys, defaults to ~/.local/share/caws/vault.enc)
+  $XDG_CACHE_HOME/caws/ (temporary credentials cache, defaults to ~/.cache/caws/)
   ~/.aws/config (profile settings: region, MFA)
 
 Environment variables set:
