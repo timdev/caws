@@ -26,7 +26,38 @@ func readPassword(prompt string) (string, error) {
 		return "", fmt.Errorf("failed to read password: %w", err)
 	}
 
-	return string(passwordBytes), nil
+	password := string(passwordBytes)
+	// Clear password bytes from memory
+	clearBytes(passwordBytes)
+
+	return password, nil
+}
+
+// readPasswordBytes prompts for a password and returns the raw bytes
+// Caller is responsible for clearing the bytes after use
+func readPasswordBytes(prompt string) ([]byte, error) {
+	// Check for test mode
+	if testPass := os.Getenv("CAWS_PASSWORD"); testPass != "" {
+		fmt.Fprintf(os.Stderr, "%s[test mode]\n", prompt)
+		return []byte(testPass), nil
+	}
+
+	// Normal interactive prompt
+	fmt.Print(prompt)
+	passwordBytes, err := term.ReadPassword(int(syscall.Stdin))
+	fmt.Println()
+	if err != nil {
+		return nil, fmt.Errorf("failed to read password: %w", err)
+	}
+
+	return passwordBytes, nil
+}
+
+// clearBytes zeros out a byte slice
+func clearBytes(b []byte) {
+	for i := range b {
+		b[i] = 0
+	}
 }
 
 // ProfileInfo contains information about an AWS profile
@@ -71,12 +102,16 @@ func NewVaultClient() (*VaultClient, error) {
 	}
 
 	// Prompt for password
-	password, err := readPassword("Enter vault password: ")
+	passwordBytes, err := readPasswordBytes("Enter vault password: ")
 	if err != nil {
 		lockFile.Close()
 		os.Remove(vaultPath + ".lock")
 		return nil, err
 	}
+
+	password := string(passwordBytes)
+	// Clear password bytes from memory after converting to string
+	defer clearBytes(passwordBytes)
 
 	// Verify password by attempting to decrypt
 	if err := verifyPassword(vaultPath, password); err != nil {
@@ -272,15 +307,20 @@ func InitVault() error {
 	}
 
 	// Prompt for password twice
-	password1, err := readPassword("Enter master password: ")
+	password1Bytes, err := readPasswordBytes("Enter master password: ")
 	if err != nil {
 		return err
 	}
+	defer clearBytes(password1Bytes)
 
-	password2, err := readPassword("Confirm password: ")
+	password2Bytes, err := readPasswordBytes("Confirm password: ")
 	if err != nil {
 		return err
 	}
+	defer clearBytes(password2Bytes)
+
+	password1 := string(password1Bytes)
+	password2 := string(password2Bytes)
 
 	if password1 != password2 {
 		return fmt.Errorf("passwords do not match")
@@ -297,7 +337,7 @@ func InitVault() error {
 		Profiles: make(map[string]ProfileData),
 	}
 
-	vaultFile, err := encryptVault(string(password1), emptyData)
+	vaultFile, err := encryptVault(password1, emptyData)
 	if err != nil {
 		return fmt.Errorf("failed to encrypt vault: %w", err)
 	}
