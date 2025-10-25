@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"time"
@@ -31,6 +33,7 @@ type STSCredentials struct {
 	SessionToken    string    `json:"SessionToken"`
 	Expiration      time.Time `json:"Expiration"`
 	Region          string    `json:"Region,omitempty"`
+	Type            string    `json:"Type"` // "session" or "federation"
 }
 
 // AssumeRole calls AWS STS to get temporary credentials
@@ -82,9 +85,105 @@ func AssumeRole(creds *AWSCredentials, duration int32, mfaCode string) (*STSCred
 		SessionToken:    *result.Credentials.SessionToken,
 		Expiration:      *result.Credentials.Expiration,
 		Region:          creds.Region,
+		Type:            "session",
 	}
 
 	return stsCreds, nil
+}
+
+// GetFederationToken calls AWS STS to get federation token (for console login)
+func GetFederationToken(creds *AWSCredentials, duration int32, name string) (*STSCredentials, error) {
+	ctx := context.Background()
+
+	// Create AWS config with static credentials
+	cfg, err := config.LoadDefaultConfig(ctx,
+		config.WithCredentialsProvider(
+			credentials.NewStaticCredentialsProvider(
+				creds.AccessKeyID,
+				creds.SecretAccessKey,
+				"",
+			),
+		),
+		config.WithRegion(creds.Region),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load AWS config: %w", err)
+	}
+
+	// Create STS client
+	client := sts.NewFromConfig(cfg)
+
+	// Build GetFederationToken input
+	input := &sts.GetFederationTokenInput{
+		Name:            aws.String(name),
+		DurationSeconds: aws.Int32(duration),
+		// Policy is optional - omitting it means the token has same permissions as the user
+	}
+
+	// Call STS GetFederationToken
+	result, err := client.GetFederationToken(ctx, input)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get federation token: %w", err)
+	}
+
+	// Convert to our STSCredentials format
+	stsCreds := &STSCredentials{
+		AccessKeyID:     *result.Credentials.AccessKeyId,
+		SecretAccessKey: *result.Credentials.SecretAccessKey,
+		SessionToken:    *result.Credentials.SessionToken,
+		Expiration:      *result.Credentials.Expiration,
+		Region:          creds.Region,
+		Type:            "federation",
+	}
+
+	return stsCreds, nil
+}
+
+// GetConsoleURL generates an AWS Console federation login URL
+func GetConsoleURL(creds *STSCredentials, region string) (string, error) {
+	// Build session JSON for federation
+	session := map[string]string{
+		"sessionId":    creds.AccessKeyID,
+		"sessionKey":   creds.SecretAccessKey,
+		"sessionToken": creds.SessionToken,
+	}
+
+	sessionJSON, err := json.Marshal(session)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal session: %w", err)
+	}
+
+	// Request signin token from AWS federation endpoint
+	federationURL := "https://signin.aws.amazon.com/federation"
+	params := url.Values{}
+	params.Add("Action", "getSigninToken")
+	params.Add("Session", string(sessionJSON))
+
+	resp, err := http.Get(federationURL + "?" + params.Encode())
+	if err != nil {
+		return "", fmt.Errorf("failed to get signin token: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		return "", fmt.Errorf("federation endpoint returned status %d", resp.StatusCode)
+	}
+
+	var tokenResp struct {
+		SigninToken string `json:"SigninToken"`
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&tokenResp); err != nil {
+		return "", fmt.Errorf("failed to parse signin token response: %w", err)
+	}
+
+	// Construct console login URL
+	loginParams := url.Values{}
+	loginParams.Add("Action", "login")
+	loginParams.Add("Destination", "https://console.aws.amazon.com/")
+	loginParams.Add("SigninToken", tokenResp.SigninToken)
+
+	return federationURL + "?" + loginParams.Encode(), nil
 }
 
 // GetCachedCredentials retrieves cached credentials if still valid

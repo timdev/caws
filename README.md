@@ -12,6 +12,21 @@ A lightweight, self-contained AWS credential manager with password-based encrypt
 - 📦 **Zero dependencies** - Single self-contained binary
 - 🔒 **Simple security** - Password-protected vault, no GPG setup required
 
+## Status: Early Development!
+
+This is in early development. 50% of the purpose of this is to use more LLM juice 
+than I typically do. Please excuse the mess.
+
+Still to do:
+
+* Use XDG standard directories for config, vault, etc.
+* Support multiple named vaults (with like --vault-id=favoriteClient)
+* Improve tests with some docker-based isolation?
+* Set up GitHub Actions 
+  * Build/Package
+  * Maybe more to support LLM-oriented development
+* Go whole-hog with LLM-driven pull requests and issue-tracker interaction?
+
 ## Prerequisites
 
 - Go 1.22+ (for building from source)

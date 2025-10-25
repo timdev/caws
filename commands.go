@@ -151,8 +151,8 @@ func handleExec(profile string, args []string) {
 
 	// Check for cached credentials FIRST (before prompting for password)
 	stsCreds, err := GetCachedCredentials(profile)
-	if err != nil {
-		// Cache miss or expired - need to get fresh credentials from vault
+	if err != nil || stsCreds.Type != "session" {
+		// Cache miss, expired, or wrong type - need to get fresh credentials from vault
 		gp, err := NewVaultClient()
 		if err != nil {
 			fmt.Printf("Error: %v\n", err)
@@ -277,4 +277,65 @@ func handleRemove(profile string) {
 	cacheDir := getCacheDir()
 	cachePath := fmt.Sprintf("%s/%s.json", cacheDir, profile)
 	os.Remove(cachePath) // Ignore errors
+}
+
+// handleLogin handles generating an AWS Console login URL
+func handleLogin(profile string) {
+	// Check for cached credentials FIRST (before prompting for password)
+	stsCreds, err := GetCachedCredentials(profile)
+	if err != nil || stsCreds.Type != "federation" {
+		// Cache miss, expired, or wrong type - need to get fresh credentials from vault
+		gp, err := NewVaultClient()
+		if err != nil {
+			fmt.Printf("Error: %v\n", err)
+			os.Exit(1)
+		}
+		defer gp.Close()
+
+		// Get credentials from vault
+		creds, err := gp.GetCredentials(profile)
+		if err != nil {
+			fmt.Printf("Error getting profile '%s': %v\n", profile, err)
+			fmt.Println("Run 'caws list' to see available profiles")
+			os.Exit(1)
+		}
+
+		// Get region and MFA from ~/.aws/config
+		configSettings, err := getConfigSettings(profile)
+		if err != nil {
+			fmt.Printf("Error: Failed to read ~/.aws/config: %v\n", err)
+			os.Exit(1)
+		}
+
+		// Set region (default to us-east-1 if not configured)
+		if configSettings.Region != "" {
+			creds.Region = configSettings.Region
+		} else {
+			creds.Region = "us-east-1"
+		}
+
+		// Get federation token for console login (12 hour duration)
+		// Note: GetFederationToken doesn't support MFA parameter, but the base
+		// credentials are still protected by MFA if configured
+		stsCreds, err = GetFederationToken(creds, 43200, profile)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error getting federation token: %v\n", err)
+			os.Exit(1)
+		}
+
+		// Cache them
+		if err := CacheCredentials(profile, stsCreds); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: failed to cache credentials: %v\n", err)
+		}
+	}
+
+	// Generate console URL
+	consoleURL, err := GetConsoleURL(stsCreds, stsCreds.Region)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error generating console URL: %v\n", err)
+		os.Exit(1)
+	}
+
+	// Print ONLY the URL to stdout (for piping to pbcopy, etc.)
+	fmt.Println(consoleURL)
 }

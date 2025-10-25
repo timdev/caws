@@ -41,13 +41,15 @@ test/
     setup.sh          # Test environment setup/teardown
     assertions.sh     # Test assertion helpers (assert_success, assert_contains, etc.)
   e2e/
-    test_init.sh           # Test vault initialization
-    test_add_profile.sh    # Test adding profiles with config interaction
-    test_add_new_profile.sh # Test profile creation when not in config
-    test_list.sh           # Test listing profiles
-    test_exec_cached.sh    # Test exec with cached credentials
-    test_exec_env.sh       # Test environment variable setting
-    run_all.sh             # Run all E2E tests
+    test_init.sh                      # Test vault initialization
+    test_add_profile.sh               # Test adding profiles with config interaction
+    test_add_new_profile.sh           # Test profile creation when not in config
+    test_list.sh                      # Test listing profiles
+    test_exec_cached.sh               # Test exec with cached credentials
+    test_exec_env.sh                  # Test environment variable setting
+    test_login.sh                     # Test console login URL generation and caching
+    test_credential_type_isolation.sh # Test session vs federation credential isolation
+    run_all.sh                        # Run all E2E tests
   bin/
     aws                    # Mock AWS CLI (for CAWS_MOCK_STS=1)
 ```
@@ -107,6 +109,6 @@ echo "✓ PASS: my_new_test"
 ✅ **No manual interaction** - Fully automated
 ✅ **Isolated** - Uses /tmp/caws-test/, never touches real data
 ✅ **Claude Code friendly** - Simple bash commands, clear output
-✅ **Comprehensive** - Covers init, add, list, exec, caching
+✅ **Comprehensive** - Covers init, add, list, exec, login, caching, credential type isolation
 ✅ **Flexible** - Mock or real AWS
 ✅ **Easy to extend** - Add new test_*.sh files
