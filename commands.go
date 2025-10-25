@@ -62,14 +62,19 @@ func handleAdd(profile string) error {
 	}
 	defer client.Close()
 
-	reader := bufio.NewReader(os.Stdin)
-
 	fmt.Printf("Adding AWS credentials for profile: %s\n\n", profile)
 
 	// Get AWS Access Key ID
-	fmt.Print("AWS Access Key ID: ")
-	accessKey, _ := reader.ReadString('\n')
-	accessKey = strings.TrimSpace(accessKey)
+	var accessKey string
+	if testAccessKey := os.Getenv("CAWS_TEST_ACCESS_KEY"); testAccessKey != "" {
+		fmt.Println("AWS Access Key ID: [test mode]")
+		accessKey = testAccessKey
+	} else {
+		reader := bufio.NewReader(os.Stdin)
+		fmt.Print("AWS Access Key ID: ")
+		accessKey, _ = reader.ReadString('\n')
+		accessKey = strings.TrimSpace(accessKey)
+	}
 
 	// Validate access key format
 	if err := validateAccessKey(accessKey); err != nil {
@@ -77,20 +82,29 @@ func handleAdd(profile string) error {
 	}
 
 	// Get AWS Secret Access Key (hidden input)
-	fmt.Print("AWS Secret Access Key: ")
-	secretKeyBytes, err := term.ReadPassword(int(syscall.Stdin))
-	fmt.Println()
-	if err != nil {
-		return fmt.Errorf("failed to read secret key: %w", err)
-	}
+	var secretKey string
+	var secretKeyBytes []byte
 
-	secretKey := string(secretKeyBytes)
-	// Clear sensitive data from memory
-	defer func() {
-		for i := range secretKeyBytes {
-			secretKeyBytes[i] = 0
+	// Check for test mode (allows non-interactive input)
+	if testSecretKey := os.Getenv("CAWS_TEST_SECRET_KEY"); testSecretKey != "" {
+		fmt.Println("AWS Secret Access Key: [test mode]")
+		secretKey = testSecretKey
+	} else {
+		fmt.Print("AWS Secret Access Key: ")
+		secretKeyBytes, err = term.ReadPassword(int(syscall.Stdin))
+		fmt.Println()
+		if err != nil {
+			return fmt.Errorf("failed to read secret key: %w", err)
 		}
-	}()
+
+		secretKey = string(secretKeyBytes)
+		// Clear sensitive data from memory
+		defer func() {
+			for i := range secretKeyBytes {
+				secretKeyBytes[i] = 0
+			}
+		}()
+	}
 
 	// Create credentials in vault (only access_key + secret_key)
 	if err := client.CreateCredentials(profile, accessKey, secretKey); err != nil {
