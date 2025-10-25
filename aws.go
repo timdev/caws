@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"time"
 )
 
@@ -122,6 +123,12 @@ func CacheCredentials(profile string, creds *STSCredentials) error {
 
 // getCacheDir returns the cache directory path
 func getCacheDir() string {
+	// Check for test mode
+	if testDir := os.Getenv("CAWS_TEST_DIR"); testDir != "" {
+		return filepath.Join(testDir, "cache")
+	}
+
+	// Normal path
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
 		return "/tmp/caws-cache"

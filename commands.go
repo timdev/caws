@@ -8,6 +8,22 @@ import (
 	"strings"
 )
 
+// readConfirmation prompts for yes/no or auto-confirms in test mode
+func readConfirmation(prompt string) bool {
+	// Check for test mode
+	if os.Getenv("CAWS_AUTO_CONFIRM") != "" {
+		fmt.Printf("%s[auto-confirmed]\n", prompt)
+		return true
+	}
+
+	// Normal interactive prompt
+	reader := bufio.NewReader(os.Stdin)
+	response, _ := reader.ReadString('\n')
+	response = strings.TrimSpace(strings.ToLower(response))
+
+	return response == "yes" || response == "y"
+}
+
 // handleAdd handles adding a new AWS profile
 func handleAdd(profile string) {
 	// Check if profile exists in ~/.aws/config
@@ -20,13 +36,8 @@ func handleAdd(profile string) {
 	if !exists {
 		// Profile not found - ask user if they want to create it
 		fmt.Printf("Profile '%s' not found in ~/.aws/config\n", profile)
-		fmt.Print("Would you like to create it? (yes/no): ")
 
-		reader := bufio.NewReader(os.Stdin)
-		response, _ := reader.ReadString('\n')
-		response = strings.TrimSpace(strings.ToLower(response))
-
-		if response == "yes" || response == "y" {
+		if readConfirmation("Would you like to create it? (yes/no): ") {
 			if err := createConfigProfile(profile); err != nil {
 				fmt.Printf("Error creating profile in config: %v\n", err)
 				os.Exit(1)
@@ -250,12 +261,7 @@ func handleRemove(profile string) {
 	defer gp.Close()
 
 	// Confirm deletion
-	fmt.Printf("Are you sure you want to remove profile '%s'? (yes/no): ", profile)
-	reader := bufio.NewReader(os.Stdin)
-	response, _ := reader.ReadString('\n')
-	response = strings.TrimSpace(strings.ToLower(response))
-
-	if response != "yes" && response != "y" {
+	if !readConfirmation(fmt.Sprintf("Are you sure you want to remove profile '%s'? (yes/no): ", profile)) {
 		fmt.Println("Cancelled")
 		return
 	}

@@ -10,6 +10,12 @@ import (
 
 // getAWSConfigPath returns the path to ~/.aws/config
 func getAWSConfigPath() (string, error) {
+	// Check for test mode
+	if testDir := os.Getenv("CAWS_TEST_DIR"); testDir != "" {
+		return filepath.Join(testDir, "config"), nil
+	}
+
+	// Normal path
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
 		return "", err

@@ -4,10 +4,30 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"syscall"
 
 	"golang.org/x/term"
 )
+
+// readPassword prompts for a password or uses CAWS_PASSWORD in test mode
+func readPassword(prompt string) (string, error) {
+	// Check for test mode
+	if testPass := os.Getenv("CAWS_PASSWORD"); testPass != "" {
+		fmt.Fprintf(os.Stderr, "%s[test mode]\n", prompt)
+		return testPass, nil
+	}
+
+	// Normal interactive prompt
+	fmt.Print(prompt)
+	passwordBytes, err := term.ReadPassword(int(syscall.Stdin))
+	fmt.Println()
+	if err != nil {
+		return "", fmt.Errorf("failed to read password: %w", err)
+	}
+
+	return string(passwordBytes), nil
+}
 
 // ProfileInfo contains information about an AWS profile
 type ProfileInfo struct {
@@ -32,14 +52,10 @@ func NewVaultClient() (*VaultClient, error) {
 	}
 
 	// Prompt for password
-	fmt.Print("Enter vault password: ")
-	passwordBytes, err := term.ReadPassword(int(syscall.Stdin))
-	fmt.Println() // New line after password input
+	password, err := readPassword("Enter vault password: ")
 	if err != nil {
-		return nil, fmt.Errorf("failed to read password: %w", err)
+		return nil, err
 	}
-
-	password := string(passwordBytes)
 
 	// Verify password by attempting to decrypt
 	if err := verifyPassword(vaultPath, password); err != nil {
@@ -206,6 +222,12 @@ func verifyPassword(vaultPath, password string) error {
 
 // getVaultPath returns the path to the vault file
 func getVaultPath() string {
+	// Check for test mode
+	if testDir := os.Getenv("CAWS_TEST_DIR"); testDir != "" {
+		return filepath.Join(testDir, "vault.enc")
+	}
+
+	// Normal path
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
 		return "/tmp/caws-vault.enc"
@@ -223,26 +245,22 @@ func InitVault() error {
 	}
 
 	// Prompt for password twice
-	fmt.Print("Enter master password: ")
-	password1, err := term.ReadPassword(int(syscall.Stdin))
-	fmt.Println()
+	password1, err := readPassword("Enter master password: ")
 	if err != nil {
-		return fmt.Errorf("failed to read password: %w", err)
+		return err
 	}
 
-	fmt.Print("Confirm password: ")
-	password2, err := term.ReadPassword(int(syscall.Stdin))
-	fmt.Println()
+	password2, err := readPassword("Confirm password: ")
 	if err != nil {
-		return fmt.Errorf("failed to read password: %w", err)
+		return err
 	}
 
-	if string(password1) != string(password2) {
+	if password1 != password2 {
 		return fmt.Errorf("passwords do not match")
 	}
 
 	// Create vault directory
-	vaultDir := fmt.Sprintf("%s/.caws", os.Getenv("HOME"))
+	vaultDir := filepath.Dir(vaultPath)
 	if err := os.MkdirAll(vaultDir, 0700); err != nil {
 		return fmt.Errorf("failed to create vault directory: %w", err)
 	}
