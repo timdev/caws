@@ -35,10 +35,10 @@ region = eu-west-1
 	defer os.Setenv("CAWS_TEST_DIR", oldTestDir)
 
 	tests := []struct {
-		name           string
-		profile        string
-		wantRegion     string
-		wantMFASerial  string
+		name          string
+		profile       string
+		wantRegion    string
+		wantMFASerial string
 	}{
 		{
 			name:          "default profile",

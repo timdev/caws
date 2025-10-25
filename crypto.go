@@ -15,9 +15,9 @@ import (
 // VaultFile represents the encrypted vault file structure
 type VaultFile struct {
 	Version int    `json:"version"`
-	Salt    string `json:"salt"`    // base64-encoded
-	Nonce   string `json:"nonce"`   // base64-encoded
-	Data    string `json:"data"`    // base64-encoded encrypted JSON
+	Salt    string `json:"salt"`  // base64-encoded
+	Nonce   string `json:"nonce"` // base64-encoded
+	Data    string `json:"data"`  // base64-encoded encrypted JSON
 }
 
 // VaultData represents the decrypted vault contents
