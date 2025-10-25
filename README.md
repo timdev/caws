@@ -1,14 +1,25 @@
 # caws
 
-A lightweight, self-contained AWS credential manager with password-based encryption. Built as a fast, local-first alternative to aws-vault with zero external dependencies.
+A lightweight, self-contained AWS credential manager with password-based encryption. 
+Built as a fast, local-first alternative to aws-vault with zero external dependencies.
+
+Inspired by [aws-vault](https://github.com/99designs/aws-vault), but I wanted 
+something with fewer dependencies. This is a small static binary tool that will
+take you from storing plaintext credentials in ~/.aws/credentials to storing them
+securely, but still conveniently.
+
+DISCLAIMER: 
+
+I don't really know golang. This isn't exactly "vibe-coded" (as I understand that term),
+but it's close. This project is 50% scratching my own itch, and 50% an LLM skeptic
+giving "agentic" coding a fair shake. You've been warned.
 
 ## Features
 
-- 🔐 **Secure storage** - Credentials encrypted with Argon2id + AES-256-GCM
-- 🚀 **Blazing fast** - Direct encryption, no external processes (~50ms overhead)
-- 🔄 **Automatic credential rotation** - Uses AWS STS for temporary credentials
+- 🔐 **Secure** - Credentials encrypted with Argon2id + AES-256-GCM
+- 🚀 **Fast** - Direct encryption, no external processes.
 - 💾 **Smart caching** - Caches temporary credentials to minimize STS calls
-- 🔑 **MFA support** - Works with AWS MFA requirements
+- 🔑 **MFA support** - Works with AWS MFA requirements (maybe!)
 - 📦 **Zero dependencies** - Single self-contained binary
 - 🔒 **Simple security** - Password-protected vault, no GPG setup required
 
@@ -19,9 +30,7 @@ than I typically do. Please excuse the mess.
 
 Still to do:
 
-* Use XDG standard directories for config, vault, etc.
 * Support multiple named vaults (with like --vault-id=favoriteClient)
-* Improve tests with some docker-based isolation?
 * Set up GitHub Actions 
   * Build/Package
   * Maybe more to support LLM-oriented development
