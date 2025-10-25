@@ -38,6 +38,18 @@ type STSCredentials struct {
 
 // AssumeRole calls AWS STS to get temporary credentials
 func AssumeRole(creds *AWSCredentials, duration int32, mfaCode string) (*STSCredentials, error) {
+	// Check for mock mode
+	if os.Getenv("CAWS_MOCK_STS") != "" {
+		return &STSCredentials{
+			AccessKeyID:     "ASIAMOCKACCESS123456",
+			SecretAccessKey: "mockSecretKey123456789012345678901234",
+			SessionToken:    "mockSessionToken123456789012345678901234567890123456789012345678901234567890",
+			Expiration:      time.Now().Add(time.Hour),
+			Region:          creds.Region,
+			Type:            "session",
+		}, nil
+	}
+
 	ctx := context.Background()
 
 	// Create AWS config with static credentials
@@ -93,6 +105,18 @@ func AssumeRole(creds *AWSCredentials, duration int32, mfaCode string) (*STSCred
 
 // GetFederationToken calls AWS STS to get federation token (for console login)
 func GetFederationToken(creds *AWSCredentials, duration int32, name string) (*STSCredentials, error) {
+	// Check for mock mode
+	if os.Getenv("CAWS_MOCK_STS") != "" {
+		return &STSCredentials{
+			AccessKeyID:     "ASIAMOCKFEDERATION56",
+			SecretAccessKey: "mockFedSecretKey1234567890123456789012",
+			SessionToken:    "mockFedSessionToken123456789012345678901234567890123456789012345678901234567890",
+			Expiration:      time.Now().Add(12 * time.Hour),
+			Region:          creds.Region,
+			Type:            "federation",
+		}, nil
+	}
+
 	ctx := context.Background()
 
 	// Create AWS config with static credentials
@@ -141,6 +165,11 @@ func GetFederationToken(creds *AWSCredentials, duration int32, name string) (*ST
 
 // GetConsoleURL generates an AWS Console federation login URL
 func GetConsoleURL(creds *STSCredentials, region string) (string, error) {
+	// Check for mock mode
+	if os.Getenv("CAWS_MOCK_STS") != "" {
+		return "https://signin.aws.amazon.com/federation?Action=login&Destination=https://console.aws.amazon.com/&SigninToken=mockToken123", nil
+	}
+
 	// Build session JSON for federation
 	session := map[string]string{
 		"sessionId":    creds.AccessKeyID,
