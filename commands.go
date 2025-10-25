@@ -6,6 +6,9 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"syscall"
+
+	"golang.org/x/term"
 )
 
 // readConfirmation prompts for yes/no or auto-confirms in test mode
@@ -25,12 +28,16 @@ func readConfirmation(prompt string) bool {
 }
 
 // handleAdd handles adding a new AWS profile
-func handleAdd(profile string) {
+func handleAdd(profile string) error {
+	// Validate profile name
+	if err := validateProfileName(profile); err != nil {
+		return err
+	}
+
 	// Check if profile exists in ~/.aws/config
 	exists, err := profileExistsInConfig(profile)
 	if err != nil {
-		fmt.Printf("Error: Failed to check ~/.aws/config: %v\n", err)
-		os.Exit(1)
+		return fmt.Errorf("failed to check ~/.aws/config: %w", err)
 	}
 
 	if !exists {
@@ -39,23 +46,21 @@ func handleAdd(profile string) {
 
 		if readConfirmation("Would you like to create it? (yes/no): ") {
 			if err := createConfigProfile(profile); err != nil {
-				fmt.Printf("Error creating profile in config: %v\n", err)
-				os.Exit(1)
+				return fmt.Errorf("failed to create profile in config: %w", err)
 			}
 			fmt.Printf("✓ Created [profile %s] in ~/.aws/config\n\n", profile)
 		} else {
 			fmt.Println("Cancelled. Check your profile name.")
-			os.Exit(0)
+			return nil
 		}
 	}
 
 	// Now proceed with adding credentials to vault
-	gp, err := NewVaultClient()
+	client, err := NewVaultClient()
 	if err != nil {
-		fmt.Printf("Error: %v\n", err)
-		os.Exit(1)
+		return err
 	}
-	defer gp.Close()
+	defer client.Close()
 
 	reader := bufio.NewReader(os.Stdin)
 
@@ -66,21 +71,30 @@ func handleAdd(profile string) {
 	accessKey, _ := reader.ReadString('\n')
 	accessKey = strings.TrimSpace(accessKey)
 
+	// Validate access key format
+	if err := validateAccessKey(accessKey); err != nil {
+		return err
+	}
+
 	// Get AWS Secret Access Key (hidden input)
 	fmt.Print("AWS Secret Access Key: ")
-
-	// Disable echo
-	exec.Command("stty", "-echo").Run()
-	secretKey, _ := reader.ReadString('\n')
-	exec.Command("stty", "echo").Run()
-
-	secretKey = strings.TrimSpace(secretKey)
+	secretKeyBytes, err := term.ReadPassword(int(syscall.Stdin))
 	fmt.Println()
+	if err != nil {
+		return fmt.Errorf("failed to read secret key: %w", err)
+	}
+
+	secretKey := string(secretKeyBytes)
+	// Clear sensitive data from memory
+	defer func() {
+		for i := range secretKeyBytes {
+			secretKeyBytes[i] = 0
+		}
+	}()
 
 	// Create credentials in vault (only access_key + secret_key)
-	if err := gp.CreateCredentials(profile, accessKey, secretKey); err != nil {
-		fmt.Printf("Error creating profile in vault: %v\n", err)
-		os.Exit(1)
+	if err := client.CreateCredentials(profile, accessKey, secretKey); err != nil {
+		return fmt.Errorf("failed to create profile in vault: %w", err)
 	}
 
 	fmt.Printf("✓ Successfully added profile '%s' to vault\n\n", profile)
@@ -104,26 +118,26 @@ func handleAdd(profile string) {
 			fmt.Println("  mfa_serial = arn:aws:iam::123456789012:mfa/your-username")
 		}
 	}
+
+	return nil
 }
 
 // handleList handles listing AWS profiles
-func handleList() {
-	gp, err := NewVaultClient()
+func handleList() error {
+	client, err := NewVaultClient()
 	if err != nil {
-		fmt.Printf("Error: %v\n", err)
-		os.Exit(1)
+		return err
 	}
-	defer gp.Close()
+	defer client.Close()
 
-	profiles, err := gp.ListProfiles()
+	profiles, err := client.ListProfiles()
 	if err != nil {
-		fmt.Printf("Error listing profiles: %v\n", err)
-		os.Exit(1)
+		return fmt.Errorf("failed to list profiles: %w", err)
 	}
 
 	if len(profiles) == 0 {
 		fmt.Println("No AWS profiles found. Add one with: caws add <profile-name>")
-		return
+		return nil
 	}
 
 	fmt.Println("Available AWS profiles:")
@@ -137,10 +151,17 @@ func handleList() {
 		}
 		fmt.Println()
 	}
+
+	return nil
 }
 
 // handleExec handles executing a command with AWS credentials
-func handleExec(profile string, args []string) {
+func handleExec(profile string, args []string) error {
+	// Validate profile name
+	if err := validateProfileName(profile); err != nil {
+		return err
+	}
+
 	// Skip "--" if present
 	if len(args) > 0 && args[0] == "--" {
 		args = args[1:]
@@ -153,25 +174,22 @@ func handleExec(profile string, args []string) {
 	stsCreds, err := GetCachedCredentials(profile)
 	if err != nil || stsCreds.Type != "session" {
 		// Cache miss, expired, or wrong type - need to get fresh credentials from vault
-		gp, err := NewVaultClient()
+		client, err := NewVaultClient()
 		if err != nil {
-			fmt.Printf("Error: %v\n", err)
-			os.Exit(1)
+			return err
 		}
-		defer gp.Close()
+		defer client.Close()
 
 		// Get credentials from vault
-		creds, err := gp.GetCredentials(profile)
+		creds, err := client.GetCredentials(profile)
 		if err != nil {
-			fmt.Printf("Error getting profile '%s': %v\n", profile, err)
-			fmt.Println("Run 'caws list' to see available profiles")
-			os.Exit(1)
+			return fmt.Errorf("failed to get profile '%s': %w\nRun 'caws list' to see available profiles", profile, err)
 		}
 
 		// Get region and MFA from ~/.aws/config
 		configSettings, err := getConfigSettings(profile)
 		if err != nil {
-			fmt.Printf("Warning: Failed to read ~/.aws/config: %v\n", err)
+			fmt.Fprintf(os.Stderr, "Warning: Failed to read ~/.aws/config: %v\n", err)
 			configSettings = &ConfigSettings{} // Use empty settings
 		}
 
@@ -180,7 +198,7 @@ func handleExec(profile string, args []string) {
 			creds.Region = configSettings.Region
 		} else {
 			creds.Region = "us-east-1"
-			fmt.Println("⚠️  Warning: No region configured in ~/.aws/config, using us-east-1")
+			fmt.Fprintln(os.Stderr, "⚠️  Warning: No region configured in ~/.aws/config, using us-east-1")
 		}
 
 		// Set MFA serial if configured
@@ -200,13 +218,12 @@ func handleExec(profile string, args []string) {
 		// Get temporary credentials
 		stsCreds, err = AssumeRole(creds, 3600, mfaCode)
 		if err != nil {
-			fmt.Printf("Error getting temporary credentials: %v\n", err)
-			os.Exit(1)
+			return fmt.Errorf("failed to get temporary credentials: %w", err)
 		}
 
 		// Cache them
 		if err := CacheCredentials(profile, stsCreds); err != nil {
-			fmt.Printf("Warning: failed to cache credentials: %v\n", err)
+			fmt.Fprintf(os.Stderr, "Warning: failed to cache credentials: %v\n", err)
 		} else {
 			fmt.Printf("✓ Credentials cached (valid until %s)\n", stsCreds.Expiration.Format("15:04:05"))
 		}
@@ -246,29 +263,33 @@ func handleExec(profile string, args []string) {
 		if exitErr, ok := err.(*exec.ExitError); ok {
 			os.Exit(exitErr.ExitCode())
 		}
-		fmt.Printf("Error executing command: %v\n", err)
-		os.Exit(1)
+		return fmt.Errorf("failed to execute command: %w", err)
 	}
+
+	return nil
 }
 
 // handleRemove handles removing an AWS profile
-func handleRemove(profile string) {
-	gp, err := NewVaultClient()
-	if err != nil {
-		fmt.Printf("Error: %v\n", err)
-		os.Exit(1)
+func handleRemove(profile string) error {
+	// Validate profile name
+	if err := validateProfileName(profile); err != nil {
+		return err
 	}
-	defer gp.Close()
+
+	client, err := NewVaultClient()
+	if err != nil {
+		return err
+	}
+	defer client.Close()
 
 	// Confirm deletion
 	if !readConfirmation(fmt.Sprintf("Are you sure you want to remove profile '%s'? (yes/no): ", profile)) {
 		fmt.Println("Cancelled")
-		return
+		return nil
 	}
 
-	if err := gp.RemoveProfile(profile); err != nil {
-		fmt.Printf("Error removing profile: %v\n", err)
-		os.Exit(1)
+	if err := client.RemoveProfile(profile); err != nil {
+		return fmt.Errorf("failed to remove profile: %w", err)
 	}
 
 	fmt.Printf("✓ Successfully removed profile '%s'\n", profile)
@@ -277,34 +298,37 @@ func handleRemove(profile string) {
 	cacheDir := getCacheDir()
 	cachePath := fmt.Sprintf("%s/%s.json", cacheDir, profile)
 	os.Remove(cachePath) // Ignore errors
+
+	return nil
 }
 
 // handleLogin handles generating an AWS Console login URL
-func handleLogin(profile string) {
+func handleLogin(profile string) error {
+	// Validate profile name
+	if err := validateProfileName(profile); err != nil {
+		return err
+	}
+
 	// Check for cached credentials FIRST (before prompting for password)
 	stsCreds, err := GetCachedCredentials(profile)
 	if err != nil || stsCreds.Type != "federation" {
 		// Cache miss, expired, or wrong type - need to get fresh credentials from vault
-		gp, err := NewVaultClient()
+		client, err := NewVaultClient()
 		if err != nil {
-			fmt.Printf("Error: %v\n", err)
-			os.Exit(1)
+			return err
 		}
-		defer gp.Close()
+		defer client.Close()
 
 		// Get credentials from vault
-		creds, err := gp.GetCredentials(profile)
+		creds, err := client.GetCredentials(profile)
 		if err != nil {
-			fmt.Printf("Error getting profile '%s': %v\n", profile, err)
-			fmt.Println("Run 'caws list' to see available profiles")
-			os.Exit(1)
+			return fmt.Errorf("failed to get profile '%s': %w\nRun 'caws list' to see available profiles", profile, err)
 		}
 
 		// Get region and MFA from ~/.aws/config
 		configSettings, err := getConfigSettings(profile)
 		if err != nil {
-			fmt.Printf("Error: Failed to read ~/.aws/config: %v\n", err)
-			os.Exit(1)
+			return fmt.Errorf("failed to read ~/.aws/config: %w", err)
 		}
 
 		// Set region (default to us-east-1 if not configured)
@@ -319,8 +343,7 @@ func handleLogin(profile string) {
 		// credentials are still protected by MFA if configured
 		stsCreds, err = GetFederationToken(creds, 43200, profile)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error getting federation token: %v\n", err)
-			os.Exit(1)
+			return fmt.Errorf("failed to get federation token: %w", err)
 		}
 
 		// Cache them
@@ -332,10 +355,11 @@ func handleLogin(profile string) {
 	// Generate console URL
 	consoleURL, err := GetConsoleURL(stsCreds, stsCreds.Region)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error generating console URL: %v\n", err)
-		os.Exit(1)
+		return fmt.Errorf("failed to generate console URL: %w", err)
 	}
 
 	// Print ONLY the URL to stdout (for piping to pbcopy, etc.)
 	fmt.Println(consoleURL)
+
+	return nil
 }

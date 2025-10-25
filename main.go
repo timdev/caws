@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"os"
 )
@@ -8,52 +9,78 @@ import (
 const version = "0.1.0"
 
 func main() {
-	if len(os.Args) < 2 {
+	// Define global flags
+	versionFlag := flag.Bool("version", false, "show version")
+	flag.BoolVar(versionFlag, "v", false, "show version (shorthand)")
+	helpFlag := flag.Bool("help", false, "show help")
+	flag.BoolVar(helpFlag, "h", false, "show help (shorthand)")
+
+	flag.Usage = printUsage
+	flag.Parse()
+
+	// Handle version and help flags
+	if *versionFlag {
+		fmt.Printf("caws version %s\n", version)
+		return
+	}
+
+	if *helpFlag {
+		printUsage()
+		return
+	}
+
+	// Get subcommand
+	args := flag.Args()
+	if len(args) < 1 {
 		printUsage()
 		os.Exit(1)
 	}
 
-	command := os.Args[1]
+	command := args[0]
 
+	// Execute subcommand
+	var err error
 	switch command {
 	case "init":
-		if err := InitVault(); err != nil {
-			fmt.Printf("Error: %v\n", err)
-			os.Exit(1)
-		}
+		err = InitVault()
 	case "add":
-		if len(os.Args) < 3 {
-			fmt.Println("Usage: caws add <profile-name>")
+		if len(args) < 2 {
+			fmt.Fprintln(os.Stderr, "Usage: caws add <profile-name>")
 			os.Exit(1)
 		}
-		handleAdd(os.Args[2])
+		err = handleAdd(args[1])
 	case "list", "ls":
-		handleList()
+		err = handleList()
 	case "exec":
-		if len(os.Args) < 3 {
-			fmt.Println("Usage: caws exec <profile-name> [-- <command>]")
+		if len(args) < 2 {
+			fmt.Fprintln(os.Stderr, "Usage: caws exec <profile-name> [-- <command>]")
 			os.Exit(1)
 		}
-		handleExec(os.Args[2], os.Args[3:])
+		err = handleExec(args[1], args[2:])
 	case "login":
-		if len(os.Args) < 3 {
-			fmt.Println("Usage: caws login <profile-name>")
+		if len(args) < 2 {
+			fmt.Fprintln(os.Stderr, "Usage: caws login <profile-name>")
 			os.Exit(1)
 		}
-		handleLogin(os.Args[2])
+		err = handleLogin(args[1])
 	case "remove", "rm":
-		if len(os.Args) < 3 {
-			fmt.Println("Usage: caws remove <profile-name>")
+		if len(args) < 2 {
+			fmt.Fprintln(os.Stderr, "Usage: caws remove <profile-name>")
 			os.Exit(1)
 		}
-		handleRemove(os.Args[2])
-	case "version", "--version", "-v":
+		err = handleRemove(args[1])
+	case "version":
 		fmt.Printf("caws version %s\n", version)
-	case "help", "--help", "-h":
+	case "help":
 		printUsage()
 	default:
-		fmt.Printf("Unknown command: %s\n\n", command)
+		fmt.Fprintf(os.Stderr, "Unknown command: %s\n\n", command)
 		printUsage()
+		os.Exit(1)
+	}
+
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
 }
