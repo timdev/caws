@@ -1,6 +1,6 @@
 # Start Claude Code inside the container (starts container if needed)
 claude:
-    @docker compose up -d 2>/dev/null || true
+    @docker compose up -d
     docker compose exec caws-dev claude chat --dangerously-skip-permissions
 
 # Start the development container
@@ -31,9 +31,16 @@ rebuild:
 logs:
     docker compose logs -f caws-dev
 
-# Clean up everything (container, image, volumes)
+# Clean up container and image (preserves volumes with Claude settings)
 clean:
+    docker compose down
+    docker rm -f caws-dev || true
+    docker rmi caws-dev || true
+
+# Nuclear option: clean everything including volumes
+nuke:
     docker compose down -v
+    docker rm -f caws-dev || true
     docker rmi caws-dev || true
 
 # Show container/compose status

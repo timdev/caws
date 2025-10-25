@@ -1,6 +1,8 @@
 services:
   caws-dev:
-    build: ..
+    build:
+      context: ..
+      dockerfile: sandbox/Dockerfile
     image: caws-dev
     container_name: caws-dev
     working_dir: /workspace
