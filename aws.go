@@ -188,7 +188,12 @@ func GetConsoleURL(creds *STSCredentials, region string) (string, error) {
 	params.Add("Action", "getSigninToken")
 	params.Add("Session", string(sessionJSON))
 
-	resp, err := http.Get(federationURL + "?" + params.Encode())
+	// Create HTTP client with timeout
+	client := &http.Client{
+		Timeout: 10 * time.Second,
+	}
+
+	resp, err := client.Get(federationURL + "?" + params.Encode())
 	if err != nil {
 		return "", fmt.Errorf("failed to get signin token: %w", err)
 	}

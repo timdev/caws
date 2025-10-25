@@ -36,11 +36,24 @@ type ProfileInfo struct {
 	MFASerial string
 }
 
+// CredentialStore defines the interface for credential storage backends
+type CredentialStore interface {
+	GetCredentials(profile string) (*AWSCredentials, error)
+	CreateCredentials(profile, accessKey, secretKey string) error
+	ListProfiles() ([]ProfileInfo, error)
+	RemoveProfile(profile string) error
+	Close() error
+}
+
 // VaultClient handles interactions with the encrypted vault
 type VaultClient struct {
 	vaultPath string
 	password  string
+	lockFile  *os.File
 }
+
+// Ensure VaultClient implements CredentialStore
+var _ CredentialStore = (*VaultClient)(nil)
 
 // NewVaultClient creates a new vault client and prompts for password
 func NewVaultClient() (*VaultClient, error) {
@@ -51,26 +64,43 @@ func NewVaultClient() (*VaultClient, error) {
 		return nil, fmt.Errorf("vault not found at %s\nRun 'caws init' to create a new vault", vaultPath)
 	}
 
+	// Acquire lock on vault
+	lockFile, err := acquireVaultLock(vaultPath)
+	if err != nil {
+		return nil, err
+	}
+
 	// Prompt for password
 	password, err := readPassword("Enter vault password: ")
 	if err != nil {
+		lockFile.Close()
+		os.Remove(vaultPath + ".lock")
 		return nil, err
 	}
 
 	// Verify password by attempting to decrypt
 	if err := verifyPassword(vaultPath, password); err != nil {
+		lockFile.Close()
+		os.Remove(vaultPath + ".lock")
 		return nil, fmt.Errorf("incorrect password or corrupted vault")
 	}
 
 	return &VaultClient{
 		vaultPath: vaultPath,
 		password:  password,
+		lockFile:  lockFile,
 	}, nil
 }
 
-// Close is a no-op for compatibility with gopass interface
-func (v *VaultClient) Close() {
-	// Nothing to close, but keep for interface compatibility
+// Close implements the CredentialStore interface
+// Releases the vault lock file
+func (v *VaultClient) Close() error {
+	if v.lockFile != nil {
+		lockPath := v.lockFile.Name()
+		v.lockFile.Close()
+		os.Remove(lockPath)
+	}
+	return nil
 }
 
 // GetCredentials retrieves AWS credentials for a profile
@@ -283,4 +313,24 @@ func InitVault() error {
 
 	fmt.Printf("✓ Vault initialized at %s\n", vaultPath)
 	return nil
+}
+
+// acquireVaultLock creates an exclusive lock file for the vault
+func acquireVaultLock(vaultPath string) (*os.File, error) {
+	lockPath := vaultPath + ".lock"
+
+	// Try to create lock file exclusively
+	// O_CREATE|O_EXCL ensures atomic creation
+	lockFile, err := os.OpenFile(lockPath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
+	if err != nil {
+		if os.IsExist(err) {
+			return nil, fmt.Errorf("vault is locked by another process (lock file: %s)", lockPath)
+		}
+		return nil, fmt.Errorf("failed to create lock file: %w", err)
+	}
+
+	// Write PID to lock file for debugging
+	fmt.Fprintf(lockFile, "%d\n", os.Getpid())
+
+	return lockFile, nil
 }
