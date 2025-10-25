@@ -8,14 +8,7 @@ Get up and running with caws in 5 minutes!
 
 ## Installation
 
-### Option 1: Using the install script (recommended)
-
-```bash
-cd caws
-./install.sh
-```
-
-### Option 2: Manual installation
+### Option 1: Build from source (recommended)
 
 ```bash
 cd caws
@@ -24,14 +17,13 @@ sudo mv caws /usr/local/bin/
 # or for user install: mv caws ~/.local/bin/
 ```
 
-### Option 3: Use the pre-built binary
+### Option 2: Use a pre-built binary
 
-If a `caws` binary already exists:
+If you have a pre-built `caws` binary:
 
 ```bash
-cd caws
 sudo mv caws /usr/local/bin/
-# or: mv caws ~/.local/bin/
+# or for user install: mv caws ~/.local/bin/
 ```
 
 ## Setup (4 steps)

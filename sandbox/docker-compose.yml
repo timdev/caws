@@ -1,0 +1,31 @@
+services:
+  caws-dev:
+    build: ..
+    image: caws-dev
+    container_name: caws-dev
+    working_dir: /workspace
+    volumes:
+      - ..:/workspace
+      - caws-claude:/home/caws/.claude
+      - ~/.claude/agents:/home/caws/.claude/agents
+    environment:
+      # Test mode credentials (safe to pass through, no real secrets)
+      - CAWS_TEST_AWS_ACCESS_KEY=${CAWS_TEST_AWS_ACCESS_KEY:-}
+      - CAWS_TEST_AWS_SECRET_KEY=${CAWS_TEST_AWS_SECRET_KEY:-}
+      - CAWS_TEST_DIR=/tmp/caws-test
+      - CAWS_PASSWORD=testpass
+      - CAWS_AUTO_CONFIRM=yes
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+    # Keep container running
+    stdin_open: true
+    tty: true
+
+volumes:
+  caws-claude:

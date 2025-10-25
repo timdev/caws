@@ -29,7 +29,7 @@ sudo mv caws /usr/local/bin/
 mv caws ~/.local/bin/  # Ensure ~/.local/bin is in PATH
 ```
 
-**Testing:** See `TEST.md` for manual testing instructions.
+**Testing:** See `docs/TEST.md` for manual testing instructions.
 
 **No unit tests** currently exist in the repository.
 
@@ -247,7 +247,7 @@ The command interface remains identical - only the backend changed.
 
 ## Testing Notes
 
-- Manual testing instructions in `TEST.md`
+- Manual testing instructions in `docs/TEST.md`
 - Test vault can be created at custom location (modify `getVaultPath()`)
 - No GPG setup needed
 - First operation in session requires password

@@ -1,0 +1,41 @@
+# Start Claude Code inside the container (starts container if needed)
+claude:
+    @docker compose up -d 2>/dev/null || true
+    docker compose exec caws-dev claude chat --dangerously-skip-permissions
+
+# Start the development container
+up:
+    docker compose up -d
+
+# Stop the development container
+down:
+    docker compose down
+
+# Enter the development container shell
+shell:
+    docker compose exec caws-dev bash
+
+# Build caws inside the container
+build:
+    docker compose exec caws-dev go build -o caws
+
+# Run tests inside the container
+test:
+    docker compose exec caws-dev ./test/e2e/run_all.sh
+
+# Rebuild the Docker image (use after changing Dockerfile)
+rebuild:
+    docker compose build --no-cache
+
+# Show container logs
+logs:
+    docker compose logs -f caws-dev
+
+# Clean up everything (container, image, volumes)
+clean:
+    docker compose down -v
+    docker rmi caws-dev || true
+
+# Show container/compose status
+status:
+    docker compose ps
