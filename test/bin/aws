@@ -1,0 +1,37 @@
+#!/bin/bash
+# Fake AWS CLI for testing when CAWS_MOCK_STS=1
+
+if [[ "$1" == "sts" && "$2" == "get-session-token" ]]; then
+    # Parse duration from args
+    duration=3600
+    for arg in "$@"; do
+        if [[ "$arg" =~ ^[0-9]+$ ]]; then
+            duration=$arg
+        fi
+    done
+
+    # Calculate expiration (1 hour from now)
+    if date -v+1H >/dev/null 2>&1; then
+        # macOS
+        expiration=$(date -u -v+${duration}S '+%Y-%m-%dT%H:%M:%SZ')
+    else
+        # Linux
+        expiration=$(date -u -d "+${duration} seconds" '+%Y-%m-%dT%H:%M:%SZ')
+    fi
+
+    # Return fake STS credentials
+    cat << EOF
+{
+  "Credentials": {
+    "AccessKeyId": "ASIATEST123456789",
+    "SecretAccessKey": "fakesecretkey123",
+    "SessionToken": "faketoken123",
+    "Expiration": "$expiration"
+  }
+}
+EOF
+    exit 0
+fi
+
+echo "Mock AWS CLI - unsupported command: $*" >&2
+exit 1
