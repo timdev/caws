@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-`caws` (Credential AWS) is a CLI tool that manages AWS credentials using password-based encryption. It's a fast, local-first alternative to aws-vault with zero external dependencies.
+`caws` (Credential AWS) is a CLI tool that manages AWS credentials using password-based encryption. It's a fast, local-first alternative to aws-vault with zero runtime dependencies.
 
 **Core workflow:**
 1. Long-term AWS credentials stored encrypted in `~/.caws/vault.enc` (Argon2id + AES-256-GCM)
@@ -66,7 +66,7 @@ mv caws ~/.local/bin/  # Ensure ~/.local/bin is in PATH
 1. Create VaultClient (prompts for password, verifies by decrypting)
 2. Retrieve profile credentials via `GetCredentials(profile)` (decrypts vault)
 3. Check cache for valid temporary credentials (`GetCachedCredentials()`)
-4. If cache miss/expired: call AWS STS via `aws` CLI (`AssumeRole()`)
+4. If cache miss/expired: call AWS STS via AWS SDK (`AssumeRole()`)
 5. Prompt for MFA code if `mfa_serial` field present
 6. Cache temporary credentials with 5-minute expiration buffer
 7. Execute command with credentials in environment
@@ -108,16 +108,19 @@ Decrypted data structure:
 ### External Dependencies
 
 **Runtime requirements:**
-- `aws` (AWS CLI) - Used for STS operations
+- None - fully self-contained binary
 
 **Go dependencies:**
 - `golang.org/x/crypto` - Argon2id key derivation
 - `golang.org/x/term` - Secure password input (ReadPassword)
 - `golang.org/x/sys` - System calls (used by term)
+- `github.com/aws/aws-sdk-go-v2` - AWS SDK for Go v2
+- `github.com/aws/aws-sdk-go-v2/config` - AWS config loading
+- `github.com/aws/aws-sdk-go-v2/credentials` - Static credential provider
+- `github.com/aws/aws-sdk-go-v2/service/sts` - AWS STS API client
 
-**Key commands executed:**
-- `aws sts get-session-token` - Get temporary credentials
-- No other external commands
+**AWS API calls:**
+- `sts:GetSessionToken` - Get temporary credentials (via AWS SDK)
 
 ## Common Development Patterns
 

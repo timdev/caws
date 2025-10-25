@@ -1,12 +1,17 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"time"
+
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/credentials"
+	"github.com/aws/aws-sdk-go-v2/service/sts"
 )
 
 // AWSCredentials represents AWS access credentials
@@ -30,19 +35,29 @@ type STSCredentials struct {
 
 // AssumeRole calls AWS STS to get temporary credentials
 func AssumeRole(creds *AWSCredentials, duration int32, mfaCode string) (*STSCredentials, error) {
-	// Set up environment with base credentials
-	env := os.Environ()
-	env = append(env, fmt.Sprintf("AWS_ACCESS_KEY_ID=%s", creds.AccessKeyID))
-	env = append(env, fmt.Sprintf("AWS_SECRET_ACCESS_KEY=%s", creds.SecretAccessKey))
-	if creds.Region != "" {
-		env = append(env, fmt.Sprintf("AWS_DEFAULT_REGION=%s", creds.Region))
+	ctx := context.Background()
+
+	// Create AWS config with static credentials
+	cfg, err := config.LoadDefaultConfig(ctx,
+		config.WithCredentialsProvider(
+			credentials.NewStaticCredentialsProvider(
+				creds.AccessKeyID,
+				creds.SecretAccessKey,
+				"",
+			),
+		),
+		config.WithRegion(creds.Region),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load AWS config: %w", err)
 	}
 
-	// Build AWS CLI command
-	args := []string{
-		"sts", "get-session-token",
-		"--duration-seconds", fmt.Sprintf("%d", duration),
-		"--output", "json",
+	// Create STS client
+	client := sts.NewFromConfig(cfg)
+
+	// Build GetSessionToken input
+	input := &sts.GetSessionTokenInput{
+		DurationSeconds: aws.Int32(duration),
 	}
 
 	// Add MFA if required
@@ -50,31 +65,26 @@ func AssumeRole(creds *AWSCredentials, duration int32, mfaCode string) (*STSCred
 		if mfaCode == "" {
 			return nil, fmt.Errorf("MFA code required but not provided")
 		}
-		args = append(args, "--serial-number", creds.MFASerial)
-		args = append(args, "--token-code", mfaCode)
+		input.SerialNumber = aws.String(creds.MFASerial)
+		input.TokenCode = aws.String(mfaCode)
 	}
 
-	cmd := exec.Command("aws", args...)
-	cmd.Env = env
-	cmd.Stderr = os.Stderr
-
-	output, err := cmd.Output()
+	// Call STS GetSessionToken
+	result, err := client.GetSessionToken(ctx, input)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get session token: %w", err)
 	}
 
-	var response struct {
-		Credentials STSCredentials `json:"Credentials"`
+	// Convert to our STSCredentials format
+	stsCreds := &STSCredentials{
+		AccessKeyID:     *result.Credentials.AccessKeyId,
+		SecretAccessKey: *result.Credentials.SecretAccessKey,
+		SessionToken:    *result.Credentials.SessionToken,
+		Expiration:      *result.Credentials.Expiration,
+		Region:          creds.Region,
 	}
 
-	if err := json.Unmarshal(output, &response); err != nil {
-		return nil, fmt.Errorf("failed to parse STS response: %w", err)
-	}
-
-	// Add region to credentials for caching
-	response.Credentials.Region = creds.Region
-
-	return &response.Credentials, nil
+	return stsCreds, nil
 }
 
 // GetCachedCredentials retrieves cached credentials if still valid
@@ -176,8 +186,8 @@ func isAWSEnvVar(envVar string) bool {
 		"AWS_SECURITY_TOKEN=",
 		"AWS_DEFAULT_REGION=",
 		"AWS_REGION=",
-		"AWS_PROFILE=", // Filter this out - we don't set it
-		"AWS_VAULT=",    // Filter old value
+		"AWS_PROFILE=",               // Filter this out - we don't set it
+		"AWS_VAULT=",                 // Filter old value
 		"AWS_CREDENTIAL_EXPIRATION=", // Filter old value
 	}
 

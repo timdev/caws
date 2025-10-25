@@ -79,8 +79,5 @@ Environment variables set:
   AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_SESSION_TOKEN
   AWS_VAULT=<profile> (for shell prompts)
   AWS_REGION, AWS_DEFAULT_REGION
-  AWS_CREDENTIAL_EXPIRATION
-
-Prerequisites:
-  - AWS CLI must be installed (for STS operations)`)
+  AWS_CREDENTIAL_EXPIRATION`)
 }

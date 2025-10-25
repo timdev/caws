@@ -14,10 +14,9 @@ A lightweight, self-contained AWS credential manager with password-based encrypt
 
 ## Prerequisites
 
-- **AWS CLI** (`aws`) - [Installation guide](https://aws.amazon.com/cli/)
 - Go 1.22+ (for building from source)
 
-That's it! No gopass, no GPG, no external password managers.
+That's it! No AWS CLI, no gopass, no GPG, no external dependencies.
 
 ## Installation
 
@@ -298,9 +297,9 @@ Your password is wrong, or the vault file is corrupted. If you've forgotten your
 
 ### "Failed to get session token"
 
-1. Verify AWS CLI is installed: `aws --version`
-2. Check that your credentials are valid
-3. If using MFA, ensure the code is correct and not expired
+1. Check that your credentials are valid
+2. If using MFA, ensure the code is correct and not expired
+3. Verify your AWS credentials have the necessary permissions
 
 ### "Profile not found"
 

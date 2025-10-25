@@ -2,19 +2,9 @@
 
 Get up and running with caws in 5 minutes!
 
-## Prerequisites Check
+## Prerequisites
 
-```bash
-# Check if AWS CLI is installed
-aws --version
-```
-
-If missing:
-- **AWS CLI**: https://aws.amazon.com/cli/
-  - macOS: `brew install awscli`
-  - Ubuntu: `sudo apt install awscli`
-
-That's it! No other dependencies needed.
+**None!** caws is a fully self-contained binary with zero runtime dependencies. Just download and run!
 
 ## Installation
 
@@ -148,7 +138,7 @@ This is normal! Your password is never cached in memory for security.
 → Check your password. If forgotten, there's no recovery - you'll need to delete `~/.caws/vault.enc` and start over.
 
 **"Failed to get session token"**
-→ Check that AWS CLI is installed and your credentials are valid
+→ Check that your AWS credentials are valid and have the necessary permissions
 
 **"Profile not found"**
 → The profile doesn't exist, run `caws list` to see available profiles
