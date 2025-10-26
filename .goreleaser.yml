@@ -1,0 +1,111 @@
+# GoReleaser configuration for caws
+# Documentation: https://goreleaser.com
+
+version: 2
+
+before:
+  hooks:
+    # Ensure dependencies are up to date
+    - go mod tidy
+    - go mod download
+
+builds:
+  - id: caws
+    binary: caws
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+    # Ensure reproducible builds
+    mod_timestamp: '{{ .CommitTimestamp }}'
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w
+      - -X main.version={{.Version}}
+      - -X main.commit={{.Commit}}
+      - -X main.date={{.Date}}
+
+archives:
+  - id: caws-archives
+    format: tar.gz
+    name_template: >-
+      {{ .ProjectName }}-
+      {{- .Version }}-
+      {{- .Os }}-
+      {{- .Arch }}
+    files:
+      - README.md
+      - LICENSE*
+      - CLAUDE.md
+
+checksum:
+  name_template: 'checksums.txt'
+  algorithm: sha256
+
+changelog:
+  sort: asc
+  use: github
+  filters:
+    exclude:
+      - '^docs:'
+      - '^test:'
+      - '^chore:'
+      - '^ci:'
+      - 'typo'
+  groups:
+    - title: Features
+      regexp: '^.*?feat(\([[:word:]]+\))??!?:.+$'
+      order: 0
+    - title: Bug Fixes
+      regexp: '^.*?fix(\([[:word:]]+\))??!?:.+$'
+      order: 1
+    - title: Other Changes
+      order: 999
+
+release:
+  github:
+    owner: timdev
+    name: caws
+  draft: false
+  prerelease: auto
+  mode: replace
+  header: |
+    ## caws {{ .Tag }}
+
+    A lightweight, self-contained AWS credential manager with password-based encryption.
+
+    ### Installation
+
+    Download the appropriate binary for your platform below, then:
+
+    ```bash
+    # Linux/macOS
+    chmod +x caws-*
+    sudo mv caws-* /usr/local/bin/caws
+
+    # Verify installation
+    caws --help
+    ```
+
+    ### Checksums
+
+    Verify your download using the `checksums.txt` file:
+
+    ```bash
+    sha256sum -c checksums.txt --ignore-missing
+    ```
+  footer: |
+    ---
+
+    **Full Changelog**: https://github.com/timdev/caws/compare/{{ .PreviousTag }}...{{ .Tag }}
+
+    ### What's caws?
+
+    caws is a fast, local-first alternative to aws-vault with zero external dependencies. Store your AWS credentials securely with password-based encryption (Argon2id + AES-256-GCM).
+
+    Learn more: https://github.com/timdev/caws
