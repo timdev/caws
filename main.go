@@ -6,7 +6,11 @@ import (
 	"os"
 )
 
-const version = "0.1.0"
+var (
+	version = "dev"
+	commit  = "unknown"
+	date    = "unknown"
+)
 
 func main() {
 	// Define global flags
@@ -20,7 +24,7 @@ func main() {
 
 	// Handle version and help flags
 	if *versionFlag {
-		fmt.Printf("caws version %s\n", version)
+		fmt.Printf("caws %s (commit: %s, built: %s)\n", version, commit, date)
 		return
 	}
 
@@ -70,7 +74,7 @@ func main() {
 		}
 		err = handleRemove(args[1])
 	case "version":
-		fmt.Printf("caws version %s\n", version)
+		fmt.Printf("caws %s (commit: %s, built: %s)\n", version, commit, date)
 	case "help":
 		printUsage()
 	default:
