@@ -36,3 +36,4 @@ dist/
 build/
 .claude
 .tool-versions
+.envrc
