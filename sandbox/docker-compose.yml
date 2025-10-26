@@ -17,6 +17,7 @@ services:
       - CAWS_TEST_DIR=/tmp/caws-test
       - CAWS_PASSWORD=testpass
       - CAWS_AUTO_CONFIRM=yes
+      - GH_TOKEN=${CAWS_GH_TOKEN:-}
     deploy:
       resources:
         limits:
