@@ -32,16 +32,12 @@ builds:
 
 archives:
   - id: caws-archives
-    format: tar.gz
+    format: binary
     name_template: >-
       {{ .ProjectName }}-
       {{- .Version }}-
       {{- .Os }}-
       {{- .Arch }}
-    files:
-      - README.md
-      - LICENSE*
-      - CLAUDE.md
 
 checksum:
   name_template: 'checksums.txt'
