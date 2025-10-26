@@ -1,398 +1,132 @@
 # caws
 
-A lightweight, self-contained AWS credential manager with password-based encryption. 
-Built as a fast, local-first alternative to aws-vault with zero external dependencies.
+A lightweight AWS credential manager with password-based encryption. Fast, local-first alternative to aws-vault with zero external dependencies.
 
-Inspired by [aws-vault](https://github.com/99designs/aws-vault), but I wanted 
-something with fewer dependencies. This is a small static binary tool that will
-take you from storing plaintext credentials in ~/.aws/credentials to storing them
-securely, but still conveniently.
-
-DISCLAIMER: 
-
-I don't really know golang. This isn't exactly "vibe-coded" (as I understand that term),
-but it's close. This project is 50% scratching my own itch, and 50% an LLM skeptic
-giving "agentic" coding a fair shake. You've been warned.
+Store your AWS credentials securely using industry-standard Argon2id + AES-256-GCM encryption. No GPG, no gopass, no external password managers - just a single self-contained binary.
 
 ## Features
 
-- 🔐 **Secure** - Credentials encrypted with Argon2id + AES-256-GCM
-- 🚀 **Fast** - Direct encryption, no external processes.
-- 💾 **Smart caching** - Caches temporary credentials to minimize STS calls
-- 🔑 **MFA support** - Works with AWS MFA requirements (maybe!)
-- 📦 **Zero dependencies** - Single self-contained binary
-- 🔒 **Simple security** - Password-protected vault, no GPG setup required
-
-## Status: Early Development!
-
-This is in early development. 50% of the purpose of this is to use more LLM juice 
-than I typically do. Please excuse the mess.
-
-Still to do:
-
-* Support multiple named vaults (with like --vault-id=favoriteClient)
-* Set up GitHub Actions 
-  * Build/Package
-  * Maybe more to support LLM-oriented development
-* Go whole-hog with LLM-driven pull requests and issue-tracker interaction?
-
-## Prerequisites
-
-- Go 1.22+ (for building from source)
-
-That's it! No AWS CLI, no gopass, no GPG, no external dependencies.
+- Secure password-based encryption (Argon2id + AES-256-GCM)
+- Zero runtime dependencies (single static binary)
+- Smart credential caching (minimize AWS STS calls)
+- MFA support for sensitive accounts
+- Fast operation (~50ms overhead for cached credentials)
+- Local-first (no network calls for credential retrieval)
+- Simple setup (one command to initialize)
 
 ## Installation
 
-### From Source
+### Download Binary (Recommended)
+
+Download the latest release for your platform:
+
+| Platform | Architecture | Download |
+|----------|-------------|----------|
+| Linux | x86_64 | [Download](https://github.com/timdev/caws/releases/latest/download/caws-linux-amd64) |
+| Linux | ARM64 | [Download](https://github.com/timdev/caws/releases/latest/download/caws-linux-arm64) |
+| macOS | Intel | [Download](https://github.com/timdev/caws/releases/latest/download/caws-darwin-amd64) |
+| macOS | Apple Silicon | [Download](https://github.com/timdev/caws/releases/latest/download/caws-darwin-arm64) |
+
+After downloading, make it executable and move to your PATH:
 
 ```bash
-git clone https://github.com/timdev/caws
+chmod +x caws-*
+sudo mv caws-* /usr/local/bin/caws
+```
+
+### Build from Source
+
+```bash
+git clone https://github.com/timdev/caws.git
 cd caws
 go build -o caws
 sudo mv caws /usr/local/bin/
 ```
 
-### Binary Release
-
-Download the latest binary from the releases page and move it to your PATH:
-
-```bash
-chmod +x caws
-sudo mv caws /usr/local/bin/
-```
+Requires Go 1.24+. See [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md) for details.
 
 ## Quick Start
 
-### 1. Initialize Vault
-
-Create a new encrypted vault with a master password:
-
 ```bash
+# 1. Initialize encrypted vault
 caws init
-```
 
-You'll be prompted to set a master password. This password encrypts all your AWS credentials.
-
-### 2. Add AWS Credentials
-
-```bash
+# 2. Add AWS credentials
 caws add production
-```
 
-Enter your vault password, then provide:
-- AWS Access Key ID
-- AWS Secret Access Key
-- Default Region (optional)
-- MFA Serial ARN (optional)
-
-Credentials are stored encrypted at `~/.caws/vault.enc`.
-
-### 3. Use Your Credentials
-
-Execute any AWS command with temporary credentials:
-
-```bash
+# 3. Use your credentials
 caws exec production -- aws s3 ls
-caws exec production -- aws ec2 describe-instances
 caws exec production -- terraform plan
 ```
 
-## Commands
+See [docs/QUICKSTART.md](docs/QUICKSTART.md) for a detailed walkthrough.
 
-### `caws init`
-
-Initialize a new encrypted vault.
+## Usage
 
 ```bash
-caws init
+caws init                        # Initialize encrypted vault
+caws add <profile>               # Add AWS profile
+caws list                        # List profiles
+caws exec <profile> -- <cmd>     # Execute command with credentials
+caws login <profile>             # Generate AWS Console login URL
+caws remove <profile>            # Remove profile
 ```
 
-Creates `~/.caws/vault.enc` protected by your master password.
-
-### `caws add <profile>`
-
-Add a new AWS profile to the vault.
-
-```bash
-caws add my-profile
-```
-
-### `caws list`
-
-List all AWS profiles stored in the vault.
-
-```bash
-caws list
-```
-
-Example output:
-```
-Available AWS profiles:
-  • production (region: us-east-1) [MFA enabled]
-  • development (region: us-west-2)
-  • staging
-```
-
-### `caws exec <profile> -- <command>`
-
-Execute a command with AWS credentials injected into the environment.
-
-```bash
-caws exec production -- aws sts get-caller-identity
-caws exec dev -- env | grep AWS
-```
-
-The tool will:
-1. Prompt for vault password (first time, then every ~55 minutes)
-2. Decrypt credentials from vault
-3. Request temporary credentials from AWS STS (1 hour duration)
-4. Cache the temporary credentials
-5. Execute your command with credentials in the environment
-
-### `caws remove <profile>`
-
-Remove a profile from the vault.
-
-```bash
-caws remove old-profile
-```
+See [docs/USAGE.md](docs/USAGE.md) for full command reference and advanced features.
 
 ## How It Works
 
-### Credential Flow
+caws encrypts your long-term AWS credentials in `~/.local/share/caws/vault.enc` using a password-based key derivation (Argon2id) and AES-256-GCM encryption. When you run a command, it:
 
-1. **Storage**: Long-term AWS credentials are encrypted with AES-256-GCM and stored in `~/.caws/vault.enc`
-2. **Password Derivation**: Master password is converted to encryption key using Argon2id (memory-hard, GPU-resistant)
-3. **Retrieval**: When you run a command, caws prompts for password and decrypts credentials
-4. **STS Exchange**: caws calls AWS STS to exchange long-term credentials for temporary credentials (1 hour validity)
-5. **Caching**: Temporary credentials are cached in `~/.caws/cache/` to avoid repeated STS calls
-6. **Execution**: Your command runs with temporary credentials in the environment
+1. Prompts for your vault password
+2. Decrypts your long-term credentials
+3. Exchanges them for temporary AWS STS credentials (1-hour validity)
+4. Caches the temporary credentials
+5. Executes your command with credentials in the environment
 
-### Security Model
+Temporary credentials are cached for ~55 minutes to minimize password prompts and AWS API calls.
 
-- ✅ Long-term credentials encrypted with Argon2id + AES-256-GCM
-- ✅ Vault file permissions: 0600 (owner read/write only)
-- ✅ Password required approximately once per hour per active profile
-- ✅ Temporary credentials have a 1-hour lifetime
-- ✅ MFA can be required for STS token generation
-- ✅ Cache files stored with 0600 permissions
-- ✅ No credentials written to shell history
-- ✅ No plaintext long-term credentials ever touch disk
+For technical details, see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
-### Vault Structure
-
-The vault is a single encrypted JSON file at `~/.caws/vault.enc`:
-
-```json
-{
-  "version": 1,
-  "salt": "base64-encoded-random-salt",
-  "nonce": "base64-encoded-random-nonce",
-  "data": "base64-encoded-encrypted-credentials"
-}
-```
-
-When decrypted, it contains:
-
-```json
-{
-  "profiles": {
-    "production": {
-      "access_key": "AKIA...",
-      "secret_key": "****",
-      "region": "us-east-1",
-      "mfa_serial": "arn:aws:iam::123456789012:mfa/user"
-    }
-  }
-}
-```
-
-## Advanced Usage
-
-### MFA Support
-
-If your AWS account requires MFA, add the MFA serial ARN when creating the profile:
-
-```bash
-caws add production
-# ... enter vault password and credentials ...
-MFA Serial ARN: arn:aws:iam::123456789012:mfa/your-username
-```
-
-When executing commands, you'll be prompted for your MFA code:
-
-```bash
-caws exec production -- aws s3 ls
-Enter vault password: ****
-Getting temporary credentials...
-Enter MFA code: 123456
-```
-
-### Password Entry Frequency
-
-With STS credential caching, you typically enter your vault password:
-- **Once per hour per active profile** during normal usage
-- Credentials are decrypted on-demand
-- STS temporary credentials cached for ~55 minutes
-- No plaintext long-term credentials persist on disk
-
-### Credential Caching
-
-Temporary credentials are cached for 1 hour. The cache location is:
-
-```
-~/.caws/cache/<profile>.json
-```
-
-To clear the cache for a profile:
-
-```bash
-rm ~/.caws/cache/production.json
-```
-
-### Multiple Profiles
-
-You can manage multiple AWS accounts:
-
-```bash
-caws add personal
-caws add work-dev
-caws add work-prod
-
-caws exec personal -- aws s3 ls
-caws exec work-prod -- aws ec2 describe-instances
-```
-
-### Shell Integration
-
-For easier access, you can create shell aliases:
-
-```bash
-# Add to ~/.bashrc or ~/.zshrc
-alias ca='caws'
-aws-exec() {
-    caws exec "$@"
-}
-```
-
-Then use:
-
-```bash
-ca list
-aws-exec production -- aws s3 ls
-```
-
-## Performance
-
-| Operation | Time | Notes |
-|-----------|------|-------|
-| Cold start (first exec) | ~1.4s | Includes vault decrypt + AWS STS call |
-| Warm start (cached STS) | ~0.1s | No vault access needed |
-| caws overhead | ~50ms | Pure Go encryption/decryption |
-
-Compare to aws-vault: **Similar or faster** for typical operations.
-
-## Comparison with aws-vault
+## Comparison to aws-vault
 
 | Feature | caws | aws-vault |
 |---------|------|-----------|
-| Backend | Password + AES-256-GCM | OS keyring/pass/file |
-| Dependencies | Zero (self-contained) | None (self-contained) |
+| Encryption backend | Password + AES-256-GCM | OS keyring/pass/file |
 | Setup | One command (`caws init`) | One command |
-| MFA support | ✅ Yes | ✅ Yes |
-| Credential caching | ✅ Yes | ✅ Yes |
-| Performance | ✅ Very fast (~50ms) | ✅ Very fast |
-| IAM role assumption | ❌ Not yet | ✅ Yes |
+| External dependencies | Zero | Zero |
+| MFA support | Yes | Yes |
+| Credential caching | Yes (~55 min) | Yes |
+| Performance | Very fast (~50ms overhead) | Very fast |
+| IAM role assumption | Not yet | Yes |
 
-## Troubleshooting
-
-### "Vault not found"
-
-Initialize the vault first:
-
-```bash
-caws init
-```
-
-### "Incorrect password or corrupted vault"
-
-Your password is wrong, or the vault file is corrupted. If you've forgotten your password, there's no recovery - you'll need to delete `~/.caws/vault.enc` and start over.
-
-### "Failed to get session token"
-
-1. Check that your credentials are valid
-2. If using MFA, ensure the code is correct and not expired
-3. Verify your AWS credentials have the necessary permissions
-
-### "Profile not found"
-
-The profile doesn't exist in your vault. List profiles with:
-
-```bash
-caws list
-```
-
-## Building from Source
-
-```bash
-# Clone the repository
-git clone https://github.com/timdev/caws
-cd caws
-
-# Build
-go build -o caws
-
-# Install
-sudo mv caws /usr/local/bin/
-
-# Or for local user install
-mv caws ~/.local/bin/  # Make sure ~/.local/bin is in your PATH
-```
-
-## Contributing
-
-Contributions are welcome! Please feel free to submit issues or pull requests.
-
-## License
-
-MIT License - feel free to use this in your own projects!
-
-## Roadmap
-
-- [ ] Support for IAM role assumption
-- [ ] Support for role chaining
-- [ ] Config file support (e.g., default profile)
-- [ ] Shell completion scripts
-- [ ] Windows support improvements
-- [ ] Export credentials to other formats
-- [ ] Vault password change command
-
-## Security Notes
-
-⚠️ **Important Security Considerations:**
-
-1. **Master Password**: Your credentials are only as secure as your master password. Use a strong, unique password.
-
-2. **Cache Directory**: Temporary credentials are cached in `~/.caws/cache/`. These files contain valid AWS credentials for up to 1 hour. The tool sets proper permissions (0600) automatically.
-
-3. **MFA Recommended**: If your AWS account contains sensitive resources, enable MFA on your IAM user.
-
-4. **Regular Rotation**: Rotate your long-term AWS credentials regularly according to your security policy.
-
-5. **No Password Recovery**: If you forget your master password, there's no way to recover it. You'll need to reinitialize and re-add all credentials.
-
-6. **Vault Backups**: Consider backing up `~/.caws/vault.enc` to a secure location. Without your password, the backup is useless to an attacker.
+Both tools are excellent. Choose caws if you prefer password-based encryption without OS keyring dependencies.
 
 ## Why caws?
 
-- **Simple setup**: No GPG, no gopass, no external password managers
-- **Self-contained**: Single binary with zero dependencies
-- **Fast**: Pure Go encryption with minimal overhead
-- **Secure**: Industry-standard Argon2id + AES-256-GCM encryption
-- **Local-first**: No network calls for credential retrieval
-- **Transparent**: Small codebase, easy to audit
+- **Simple setup** - No GPG, gopass, or external password managers required
+- **Self-contained** - Single binary, zero runtime dependencies
+- **Fast** - Pure Go encryption with minimal overhead
+- **Secure** - Industry-standard Argon2id + AES-256-GCM
+- **Local-first** - No network calls for credential retrieval
+- **Transparent** - Small codebase, easy to audit
 
-## Author
+## Documentation
 
-Built as a fast, simple, local-first alternative to aws-vault for developers who want credential management without external dependencies.
+- [Quick Start Guide](docs/QUICKSTART.md) - Step-by-step tutorial
+- [Usage Guide](docs/USAGE.md) - Complete command reference
+- [Architecture](docs/ARCHITECTURE.md) - Technical deep dive
+- [Security](docs/SECURITY.md) - Security model and best practices
+- [Contributing](docs/CONTRIBUTING.md) - Development guide
+
+## Project Status
+
+This project is in active development and is functional for daily use. It's also an experiment in LLM-assisted development - much of the code was written with AI assistance as the author learns Go.
+
+The tool handles real AWS credentials and uses production-grade encryption. While young, the core security model is sound and the codebase is small enough to audit personally.
+
+Use at your own discretion. Feedback and contributions welcome!
+
+## License
+
+MIT License - see LICENSE file for details.

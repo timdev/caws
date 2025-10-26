@@ -8,23 +8,35 @@ Get up and running with caws in 5 minutes!
 
 ## Installation
 
-### Option 1: Build from source (recommended)
+### Option 1: Download Binary (Recommended)
+
+Download the latest release for your platform:
+
+| Platform | Architecture | Download |
+|----------|-------------|----------|
+| Linux | x86_64 | [Download](https://github.com/timdev/caws/releases/latest/download/caws-linux-amd64) |
+| Linux | ARM64 | [Download](https://github.com/timdev/caws/releases/latest/download/caws-linux-arm64) |
+| macOS | Intel | [Download](https://github.com/timdev/caws/releases/latest/download/caws-darwin-amd64) |
+| macOS | Apple Silicon | [Download](https://github.com/timdev/caws/releases/latest/download/caws-darwin-arm64) |
+
+After downloading, make it executable and move to your PATH:
 
 ```bash
+chmod +x caws-*
+sudo mv caws-* /usr/local/bin/caws
+```
+
+### Option 2: Build from Source
+
+```bash
+git clone https://github.com/timdev/caws.git
 cd caws
 go build -o caws
 sudo mv caws /usr/local/bin/
 # or for user install: mv caws ~/.local/bin/
 ```
 
-### Option 2: Use a pre-built binary
-
-If you have a pre-built `caws` binary:
-
-```bash
-sudo mv caws /usr/local/bin/
-# or for user install: mv caws ~/.local/bin/
-```
+See [CONTRIBUTING.md](../CONTRIBUTING.md) for detailed build instructions.
 
 ## Setup (4 steps)
 
@@ -117,9 +129,9 @@ All profiles are stored in the same encrypted vault.
 
 You'll be prompted for your vault password:
 - Every time you add/list/remove profiles
-- Approximately once per hour when running commands (due to STS caching)
+- When running `exec` or `login` commands IF cached credentials have expired (approximately once per hour)
 
-This is normal! Your password is never cached in memory for security.
+When credentials are cached (valid for ~55 minutes), you won't be prompted for a password. Your password is never stored in memory for security.
 
 ## Troubleshooting
 
@@ -137,27 +149,29 @@ This is normal! Your password is never cached in memory for security.
 
 ## What's Happening Behind the Scenes?
 
-1. Your AWS credentials (Access Key + Secret) are stored **encrypted** in `~/.caws/vault.enc`
+1. Your AWS credentials (Access Key + Secret) are stored **encrypted** in `~/.local/share/caws/vault.enc`
    - Encryption: Argon2id + AES-256-GCM (industry standard)
    - File permissions: 0600 (only you can read/write)
+   - Temporary credentials cached in `~/.cache/caws/`
 
 2. When you run a command, caws:
-   - Prompts for your vault password
+   - Checks for valid cached credentials first
+   - If cache is expired/missing: prompts for vault password
    - Decrypts your credentials
    - Calls AWS STS to get **temporary credentials** (valid for 1 hour)
    - Caches the temporary credentials locally
    - Runs your command with the temp credentials
 
-3. The next time you run a command within an hour, it uses the cached credentials (but still asks for your vault password)
+3. The next time you run a command within an hour, it uses the cached credentials **without prompting for your password**
 
 **Security**: Your long-term AWS credentials are always encrypted and never written to disk in plaintext!
 
 ## Next Steps
 
-- Read the full [README.md](README.md) for advanced features
-- Set up MFA for extra security
+- Read the full [README.md](../README.md) for advanced features
+- Set up MFA for extra security (configure in `~/.aws/config`)
 - Add more AWS profiles for different accounts/roles
-- Consider backing up `~/.caws/vault.enc` to a secure location
+- Consider backing up `~/.local/share/caws/vault.enc` to a secure location
 
 ## Getting Help
 
@@ -165,8 +179,11 @@ This is normal! Your password is never cached in memory for security.
 caws help
 ```
 
-Or check the [README.md](README.md) for detailed documentation.
+Or check the documentation:
+- [README.md](../README.md) - Project overview
+- [USAGE.md](USAGE.md) - Complete command reference
+- [SECURITY.md](SECURITY.md) - Security best practices
 
 ---
 
-**Having issues?** Open an issue on GitHub or check the Troubleshooting section in the README.
+**Having issues?** Open an issue on [GitHub](https://github.com/timdev/caws/issues).
