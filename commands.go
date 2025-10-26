@@ -20,6 +20,7 @@ func readConfirmation(prompt string) bool {
 	}
 
 	// Normal interactive prompt
+	fmt.Print(prompt)
 	reader := bufio.NewReader(os.Stdin)
 	response, _ := reader.ReadString('\n')
 	response = strings.TrimSpace(strings.ToLower(response))
