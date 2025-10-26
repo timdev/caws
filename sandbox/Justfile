@@ -1,3 +1,7 @@
+# List all available recipes
+help:
+    @just --list --unsorted
+
 # Start Claude Code inside the container (starts container if needed)
 claude:
     @docker compose up -d
@@ -10,6 +14,10 @@ up:
 # Stop the development container
 down:
     docker compose down
+
+# Show container/compose status
+status:
+    docker compose ps
 
 # Enter the development container shell
 shell:
@@ -42,7 +50,3 @@ nuke:
     docker compose down -v
     docker rm -f caws-dev || true
     docker rmi caws-dev || true
-
-# Show container/compose status
-status:
-    docker compose ps
